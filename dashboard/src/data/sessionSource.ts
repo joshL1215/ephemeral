@@ -141,18 +141,20 @@ function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
   const sessionId = snapshot.sessionId ?? raw.session_id ?? "";
   const allContainers = raw.containers ?? [];
 
+  const isTerminated = (c: RawContainer) => c.state === "terminated" || c.state === "terminating";
+
   const deployedSandboxes =
     snapshot.deployedSandboxes ??
     raw.deployedContainers ??
     allContainers
-      .filter((c) => c.state === "assigned")
+      .filter((c) => c.state === "assigned" || (isTerminated(c) && c.assigned_to))
       .map(containerToSandbox);
 
   const sandboxPool =
     snapshot.sandboxPool ??
     raw.containerPool ??
     allContainers
-      .filter((c) => c.state !== "assigned")
+      .filter((c) => !isTerminated(c) && c.state !== "assigned")
       .map(containerToSandbox);
 
   // Merge backend logs + tool_calls into a sorted AgentLogEntry list
@@ -186,15 +188,16 @@ function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
 function containerToSandbox(c: RawContainer): import("../types").SandboxSummary {
   const label = c.resource_tier ? `${c.profile} [${c.resource_tier}]` : c.profile;
   const isTerminal = c.state === "terminated" || c.state === "terminating" || c.state === "stopped";
+  const uptime = isTerminal
+    ? c.assigned_to ? "completed" : c.state
+    : c.ready_at
+      ? `ready ${Math.round((Date.now() / 1000 - c.ready_at))}s ago`
+      : c.state;
   return {
     id: c.id,
     name: label,
     status: mapSandboxStatus(c.state),
-    uptime: isTerminal
-      ? c.state
-      : c.ready_at
-        ? `ready ${Math.round((Date.now() / 1000 - c.ready_at))}s ago`
-        : c.state,
+    uptime,
   };
 }
 
@@ -377,9 +380,9 @@ function normalizeEvent(event: Record<string, unknown>, sessionId: string): Sess
             nested(event, "data.name"),
           ) ?? id,
           status: "stopped" as const,
-          uptime: "terminated",
+          uptime: "completed",
         },
-        location: "pool" as const,
+        location: "deployed" as const,
       };
     }
 

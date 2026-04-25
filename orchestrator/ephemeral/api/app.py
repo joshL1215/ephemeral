@@ -41,6 +41,8 @@ async def _build_snapshot(session_id: str, container_service: ContainerService, 
                     "profile": c.profile_name,
                     "resource_tier": c.spec.resource_tier.value,
                     "state": c.state.value,
+                    "assigned_to": c.assigned_to,
+                    "ready_at": c.ready_at,
                 }
                 for c in containers
             ],
@@ -98,6 +100,7 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
                     "created_at": c.created_at,
                     "ready_at": c.ready_at,
                     "assigned_to": c.assigned_to,
+                    "predicted_for": c.predicted_for,
                 }
                 for c in containers
             ],

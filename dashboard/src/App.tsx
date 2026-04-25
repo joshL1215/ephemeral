@@ -139,7 +139,7 @@ function SandboxRow(props: {
   onSelect?: (id: string) => void;
 }) {
   const { sandbox, selected, onSelect } = props;
-  const isTerminated = sandbox.status === "stopped" && sandbox.uptime === "terminated";
+  const isTerminated = sandbox.status === "stopped";
 
   return (
     <article
@@ -309,8 +309,18 @@ function EmptyState() {
 
 function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent): SessionSnapshot {
   switch (event.type) {
-    case "snapshot":
-      return event.snapshot;
+    case "snapshot": {
+      const next = event.snapshot;
+      // Preserve terminated containers that were previously deployed — once in deployed, always in deployed
+      const nextDeployedIds = new Set(next.deployedSandboxes.map((s) => s.id));
+      const preserved = currentSnapshot.deployedSandboxes.filter(
+        (s) => s.status === "stopped" && !nextDeployedIds.has(s.id),
+      );
+      return {
+        ...next,
+        deployedSandboxes: [...next.deployedSandboxes, ...preserved],
+      };
+    }
     case "deployed_sandboxes":
       return { ...currentSnapshot, deployedSandboxes: event.deployedSandboxes };
     case "sandbox_pool":

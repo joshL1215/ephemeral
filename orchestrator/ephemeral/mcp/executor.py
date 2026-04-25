@@ -31,8 +31,8 @@ async def execute(
     try:
         result = await container_service.exec(routing.container_id, code, language=language)
     finally:
-        # Always release back to pool — even on error the container may still be usable
-        await container_service.release(routing.container_id)
+        # Kill after use — logs are preserved in exec_history, container is shown as terminated in UI
+        await container_service.kill(routing.container_id, reason="execution complete")
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     _log.info(
