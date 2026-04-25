@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { getSessionSource } from "./data/sessionSource";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { getSessionSource, type ContainerExecution } from "./data/sessionSource";
 import type {
   AgentLogEntry,
   AgentSummary,
@@ -14,26 +14,22 @@ const sessionSource = getSessionSource();
 export function App() {
   const [sessionId] = useState(DEFAULT_SESSION_ID);
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
+  const [containerLogs, setContainerLogs] = useState<ContainerExecution[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
 
     void sessionSource.getSnapshot(sessionId).then((nextSnapshot) => {
-      if (!active) {
-        return;
-      }
-
+      if (!active) return;
       setSnapshot(nextSnapshot);
-
       unsubscribe = sessionSource.subscribe?.(sessionId, {
         onEvent(event) {
-          if (!active) {
-            return;
-          }
-
-          setSnapshot((currentSnapshot) =>
-            currentSnapshot ? applySessionEvent(currentSnapshot, event) : currentSnapshot,
+          if (!active) return;
+          setSnapshot((current) =>
+            current ? applySessionEvent(current, event) : current,
           );
         },
         onError(error) {
@@ -48,6 +44,24 @@ export function App() {
     };
   }, [sessionId]);
 
+  const handleSelectContainer = useCallback(async (containerId: string) => {
+    if (selectedContainerId === containerId) {
+      setSelectedContainerId(null);
+      setContainerLogs([]);
+      return;
+    }
+    setSelectedContainerId(containerId);
+    setContainerLogs([]);
+    if (!sessionSource.fetchContainerLogs) return;
+    setLogsLoading(true);
+    try {
+      const logs = await sessionSource.fetchContainerLogs(containerId);
+      setContainerLogs(logs);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [selectedContainerId]);
+
   return (
     <main className="app-shell">
       <div className="frame">
@@ -57,13 +71,28 @@ export function App() {
         </header>
 
         <section className="layout">
-          <Panel className="deployed-panel" title="Deployed Sandboxes">
-            <div className="stack stack-compact">
-              {snapshot?.deployedSandboxes.map((sandbox) => (
-                <SandboxRow sandbox={sandbox} key={sandbox.id} />
-              )) ?? <EmptyState />}
-            </div>
-          </Panel>
+          <section className="left-column">
+            <Panel title="Deployed Sandboxes">
+              <div className="stack stack-compact">
+                {snapshot?.deployedSandboxes.map((sandbox) => (
+                  <SandboxRow
+                    sandbox={sandbox}
+                    key={sandbox.id}
+                    selected={selectedContainerId === sandbox.id}
+                    onSelect={handleSelectContainer}
+                  />
+                )) ?? <EmptyState />}
+              </div>
+            </Panel>
+
+            <Panel title={selectedContainerId ? `Logs — ${selectedContainerId}` : "Container Logs"}>
+              <ContainerLogViewer
+                containerId={selectedContainerId}
+                executions={containerLogs}
+                loading={logsLoading}
+              />
+            </Panel>
+          </section>
 
           <section className="right-column">
             <Panel title="Agent Observability">
@@ -77,7 +106,12 @@ export function App() {
             <Panel title="Sandbox Pool">
               <div className="stack stack-compact">
                 {snapshot?.sandboxPool.map((sandbox) => (
-                  <SandboxRow sandbox={sandbox} key={sandbox.id} />
+                  <SandboxRow
+                    sandbox={sandbox}
+                    key={sandbox.id}
+                    selected={selectedContainerId === sandbox.id}
+                    onSelect={handleSelectContainer}
+                  />
                 )) ?? <EmptyState />}
               </div>
             </Panel>
@@ -99,11 +133,20 @@ function Panel(props: { title: string; children: ReactNode; className?: string }
   );
 }
 
-function SandboxRow(props: { sandbox: SandboxSummary }) {
-  const { sandbox } = props;
+function SandboxRow(props: {
+  sandbox: SandboxSummary;
+  selected?: boolean;
+  onSelect?: (id: string) => void;
+}) {
+  const { sandbox, selected, onSelect } = props;
+  const isTerminated = sandbox.status === "stopped" && sandbox.uptime === "terminated";
 
   return (
-    <article className="row">
+    <article
+      className={`row selectable${selected ? " selected" : ""}${isTerminated ? " row-terminated" : ""}`}
+      onClick={() => onSelect?.(sandbox.id)}
+      title={`Click to view logs for ${sandbox.id}`}
+    >
       <div>
         <ExpandableText className="primary" text={sandbox.name} />
         <ExpandableText className="secondary" text={sandbox.id} />
@@ -113,6 +156,43 @@ function SandboxRow(props: { sandbox: SandboxSummary }) {
         <span className="secondary">{sandbox.uptime}</span>
       </div>
     </article>
+  );
+}
+
+function ContainerLogViewer(props: {
+  containerId: string | null;
+  executions: ContainerExecution[];
+  loading: boolean;
+}) {
+  const { containerId, executions, loading } = props;
+
+  if (!containerId) {
+    return <div className="empty">Click a container to view its execution logs</div>;
+  }
+  if (loading) {
+    return <div className="empty">Loading…</div>;
+  }
+  if (executions.length === 0) {
+    return <div className="empty">No executions recorded for this container</div>;
+  }
+
+  return (
+    <div className="log-output-scroll">
+      {executions.map((exec, i) => (
+        <div key={i} className="exec-entry">
+          <div className="exec-header secondary">
+            <span>{formatLogTime(exec.ts)}</span>
+            <span className={exec.exit_code === 0 ? "exec-ok" : "exec-err"}>
+              exit={exec.exit_code}
+            </span>
+            <span>{exec.duration_ms}ms</span>
+          </div>
+          <pre className="exec-code">{exec.code}</pre>
+          {exec.stdout && <pre className="exec-output">{exec.stdout}</pre>}
+          {exec.stderr && <pre className="exec-output exec-stderr">{exec.stderr}</pre>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -171,10 +251,7 @@ function AutoScrollingList(props: {
 
   useLayoutEffect(() => {
     const element = ref.current;
-    if (!element || !stickToBottomRef.current) {
-      return;
-    }
-
+    if (!element || !stickToBottomRef.current) return;
     element.scrollTop = element.scrollHeight;
   }, [listKey, children]);
 
@@ -217,7 +294,7 @@ function ExpandableText(props: { text: string; className?: string }) {
   return (
     <button
       className={`expandable-text${expanded ? " expanded" : ""}${className ? ` ${className}` : ""}`}
-      onClick={() => setExpanded((value) => !value)}
+      onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
       title={expanded ? "Collapse" : "Click to expand"}
       type="button"
     >
@@ -235,20 +312,11 @@ function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent
     case "snapshot":
       return event.snapshot;
     case "deployed_sandboxes":
-      return {
-        ...currentSnapshot,
-        deployedSandboxes: event.deployedSandboxes,
-      };
+      return { ...currentSnapshot, deployedSandboxes: event.deployedSandboxes };
     case "sandbox_pool":
-      return {
-        ...currentSnapshot,
-        sandboxPool: event.sandboxPool,
-      };
+      return { ...currentSnapshot, sandboxPool: event.sandboxPool };
     case "agent":
-      return {
-        ...currentSnapshot,
-        orchestratorAgent: event.orchestratorAgent,
-      };
+      return { ...currentSnapshot, orchestratorAgent: event.orchestratorAgent };
     case "agent_log":
       return {
         ...currentSnapshot,
@@ -298,11 +366,7 @@ function applySandboxUpsert(
 
 function upsertSandbox(sandboxes: SandboxSummary[], sandbox: SandboxSummary) {
   const existingIndex = sandboxes.findIndex((entry) => entry.id === sandbox.id);
-
-  if (existingIndex === -1) {
-    return [sandbox, ...sandboxes];
-  }
-
+  if (existingIndex === -1) return [sandbox, ...sandboxes];
   return sandboxes.map((entry) => (entry.id === sandbox.id ? sandbox : entry));
 }
 
@@ -314,4 +378,3 @@ function formatLogTime(ts: number) {
     hour12: false,
   });
 }
-

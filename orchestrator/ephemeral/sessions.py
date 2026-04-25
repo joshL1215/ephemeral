@@ -54,6 +54,9 @@ class SessionStore:
             except asyncio.QueueFull:
                 _log.warning("SSE queue full, dropping event")
 
+    async def broadcast(self, session_id: str, event: dict) -> None:
+        await self._broadcast(session_id, event)
+
     async def _broadcast(self, session_id: str, event: dict) -> None:
         async with self._lock:
             if session_id not in self._sessions:

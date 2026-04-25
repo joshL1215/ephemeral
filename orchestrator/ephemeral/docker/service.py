@@ -26,6 +26,7 @@ class ContainerService:
         self._containers: dict[str, Container] = {}
         self._ready_by_signature: dict[str, list[str]] = {}
         self._lock = asyncio.Lock()
+        self._exec_history: dict[str, list[dict]] = {}  # container_id → execution records
 
     # ------------------------------------------------------------------
     # Public API
@@ -224,8 +225,24 @@ class ContainerService:
             stderr=stderr,
             duration_ms=duration_ms,
         )
+
+        history = self._exec_history.setdefault(container_id, [])
+        history.append({
+            "ts": time.time(),
+            "code": code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": result.exit_code,
+            "duration_ms": duration_ms,
+        })
+        if len(history) > 50:
+            self._exec_history[container_id] = history[-50:]
+
         await publish("container.exec", {"id": container_id, "exit_code": result.exit_code})
         return exec_result
+
+    def get_exec_history(self, container_id: str) -> list[dict]:
+        return list(self._exec_history.get(container_id, []))
 
     async def install_packages(self, container_id: str, packages: list[str]) -> ExecResult:
         if not packages:

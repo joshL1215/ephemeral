@@ -93,9 +93,12 @@ body {
   gap: 6px;
 }
 
-.deployed-panel {
-  height: 100%;
+.left-column {
+  min-height: 0;
   overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(140px, 0.45fr);
+  gap: 8px;
 }
 
 .panel-header h1 {
@@ -258,6 +261,29 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.row.selectable {
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.row.selectable:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.row.selected {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.row.row-terminated {
+  opacity: 0.45;
+}
+
+.row.row-terminated.selected {
+  opacity: 0.7;
+}
+
 .primary {
   color: #ffffff;
   font-size: 0.78rem;
@@ -357,6 +383,63 @@ body {
   background-clip: padding-box;
 }
 
+.log-output-scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.exec-entry {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.exec-header {
+  display: flex;
+  gap: 12px;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-ok {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.exec-err {
+  color: #ff6b6b;
+}
+
+.exec-code {
+  margin: 0;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  padding-left: 6px;
+}
+
+.exec-output {
+  margin: 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.exec-stderr {
+  color: #ff9999;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     padding: 8px;
@@ -378,6 +461,11 @@ body {
 
   body {
     overflow: auto;
+  }
+
+  .left-column {
+    grid-template-rows: minmax(180px, auto) minmax(140px, auto);
+    overflow: visible;
   }
 
   .right-column {

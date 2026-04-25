@@ -17,6 +17,7 @@ _log = logging.getLogger("ephemeral.provisioner")
 _MAX_POOL_PER_SESSION = 5
 _PRUNE_THRESHOLD = 6.0  # weighted units before pruning pass fires
 _TIER_WEIGHTS = {"light": 0.5, "medium": 1.0, "heavy": 2.0}
+_LLM_COOLDOWN_S = 30.0  # minimum seconds between K2 calls per session
 
 # Tools available only during the pruning pass
 _PRUNE_TOOLS = [t for t in TOOLS if t["function"]["name"] in ("kill_containers", "no_action")]
@@ -32,6 +33,7 @@ class ProvisionerAgent:
         self._k2 = k2_client
         self._windows: dict[str, ContextWindow] = {}
         self._session_warm_counts: dict[str, int] = {}
+        self._last_llm_call: dict[str, float] = {}  # session_id → timestamp
 
     async def on_context_event(self, session_id: str, event: ContextEvent) -> None:
         store = get_store()
@@ -40,6 +42,14 @@ class ProvisionerAgent:
 
         content = event.content if isinstance(event.content, str) else str(event.content)
         await store.append_log(session_id, f"Context received: {content}")
+
+        # Rate-limit K2 calls — don't reason on every single event
+        now = time.time()
+        last = self._last_llm_call.get(session_id, 0.0)
+        if now - last < _LLM_COOLDOWN_S:
+            _log.debug("[%s] Skipping K2 call — cooldown (%.0fs remaining)", session_id, _LLM_COOLDOWN_S - (now - last))
+            return
+        self._last_llm_call[session_id] = now
 
         tool_calls = await self._llm_predict(session_id, window)
 

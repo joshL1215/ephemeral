@@ -28,6 +28,28 @@ class ExecuteRequest(BaseModel):
     resource_tier: str | None = None
 
 
+async def _build_snapshot(session_id: str, container_service: ContainerService, session_store: SessionStore) -> dict:
+    containers = await container_service.list_containers()
+    return {
+        "type": "snapshot",
+        "data": {
+            "session_id": session_id,
+            "pool": await container_service.pool_stats(),
+            "containers": [
+                {
+                    "id": c.id,
+                    "profile": c.profile_name,
+                    "resource_tier": c.spec.resource_tier.value,
+                    "state": c.state.value,
+                }
+                for c in containers
+            ],
+            "logs": session_store.get_logs(session_id),
+            "tool_calls": session_store.get_tool_calls(session_id),
+        },
+    }
+
+
 def create_app(container_service: ContainerService, session_store: SessionStore) -> FastAPI:
     app = FastAPI(title="EPHEMERAL Orchestrator API")
 
@@ -93,25 +115,7 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
         queue = await session_store.subscribe(session_id)
 
         async def build_snapshot() -> dict:
-            containers = await container_service.list_containers()
-            return {
-                "type": "snapshot",
-                "data": {
-                    "session_id": session_id,
-                    "pool": await container_service.pool_stats(),
-                    "containers": [
-                        {
-                            "id": c.id,
-                            "profile": c.profile_name,
-                            "resource_tier": c.spec.resource_tier.value,
-                            "state": c.state.value,
-                        }
-                        for c in containers
-                    ],
-                    "logs": session_store.get_logs(session_id),
-                    "tool_calls": session_store.get_tool_calls(session_id),
-                },
-            }
+            return await _build_snapshot(session_id, container_service, session_store)
 
         _RECONCILE_INTERVAL = 10  # push fresh container state every 10s
 
@@ -167,10 +171,24 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Routing failed: {e}")
 
+        # Push snapshot now — container is assigned and should appear in Deployed Sandboxes
+        if body.session_id:
+            await session_store.broadcast(
+                body.session_id,
+                await _build_snapshot(body.session_id, container_service, session_store),
+            )
+
         try:
             result = await execute(body.code, body.language, routing, container_service)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Execution failed: {e}")
+
+        # Push snapshot again — container released back to pool
+        if body.session_id:
+            await session_store.broadcast(
+                body.session_id,
+                await _build_snapshot(body.session_id, container_service, session_store),
+            )
 
         total_ms = int((time.time() - t_start) * 1000)
 
@@ -206,6 +224,11 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
             "duration_ms": result.duration_ms,
             "total_ms": total_ms,
         }
+
+    @app.get("/api/containers/{container_id}/logs")
+    async def container_logs(container_id: str):
+        history = container_service.get_exec_history(container_id)
+        return {"container_id": container_id, "executions": history}
 
     @app.get("/api/sessions")
     async def list_sessions():

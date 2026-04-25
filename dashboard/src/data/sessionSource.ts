@@ -11,6 +11,7 @@ export type SessionSource = {
     },
   ) => () => void;
   sendContext?: (sessionId: string, content: string) => Promise<void>;
+  fetchContainerLogs?: (containerId: string) => Promise<ContainerExecution[]>;
 };
 
 export const mockSessionSource: SessionSource = {
@@ -63,6 +64,17 @@ export function createBackendSessionSource(baseUrl = ""): SessionSource {
       };
     },
 
+    async fetchContainerLogs(containerId) {
+      try {
+        const response = await fetch(`${baseUrl}/api/containers/${encodeURIComponent(containerId)}/logs`);
+        if (!response.ok) return [];
+        const data = (await response.json()) as { executions?: ContainerExecution[] };
+        return data.executions ?? [];
+      } catch {
+        return [];
+      }
+    },
+
     async sendContext(sessionId, content) {
       const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context`, {
         method: "POST",
@@ -89,6 +101,15 @@ export function getSessionSource() {
 
   return mockSessionSource;
 }
+
+export type ContainerExecution = {
+  ts: number;
+  code: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+};
 
 type RawContainer = {
   id: string;
@@ -131,7 +152,7 @@ function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     snapshot.sandboxPool ??
     raw.containerPool ??
     allContainers
-      .filter((c) => c.state !== "assigned" && c.state !== "terminated" && c.state !== "terminating")
+      .filter((c) => c.state !== "assigned")
       .map(containerToSandbox);
 
   // Merge backend logs + tool_calls into a sorted AgentLogEntry list
@@ -164,13 +185,16 @@ function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
 
 function containerToSandbox(c: RawContainer): import("../types").SandboxSummary {
   const label = c.resource_tier ? `${c.profile} [${c.resource_tier}]` : c.profile;
+  const isTerminal = c.state === "terminated" || c.state === "terminating" || c.state === "stopped";
   return {
     id: c.id,
     name: label,
     status: mapSandboxStatus(c.state),
-    uptime: c.ready_at
-      ? `ready ${Math.round((Date.now() / 1000 - c.ready_at))}s ago`
-      : c.state,
+    uptime: isTerminal
+      ? c.state
+      : c.ready_at
+        ? `ready ${Math.round((Date.now() / 1000 - c.ready_at))}s ago`
+        : c.state,
   };
 }
 
@@ -343,9 +367,19 @@ function normalizeEvent(event: Record<string, unknown>, sessionId: string): Sess
 
   if (eventType.startsWith("container.")) {
     if (eventType === "container.killed") {
+      const id = extractSandboxId(event);
       return {
-        type: "remove_sandbox",
-        sandboxId: extractSandboxId(event),
+        type: "upsert_sandbox",
+        sandbox: {
+          id,
+          name: firstString(
+            nested(event, "data.profile"),
+            nested(event, "data.name"),
+          ) ?? id,
+          status: "stopped" as const,
+          uptime: "terminated",
+        },
+        location: "pool" as const,
       };
     }
 
