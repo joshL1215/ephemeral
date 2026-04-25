@@ -333,10 +333,13 @@ class ContainerService:
         Called once at startup. Returns the number of containers recovered."""
 
         def _list():
-            return self._client.containers.list(
+            containers = self._client.containers.list(
                 all=True,
                 filters={"label": "ephemeral.id"},
             )
+            for dc in containers:
+                dc.reload()
+            return containers
 
         try:
             docker_containers = await asyncio.to_thread(_list)

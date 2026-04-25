@@ -85,15 +85,13 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
     async def stream_observability(session_id: str, request: Request):
         queue = await session_store.subscribe(session_id)
 
-        async def event_generator() -> AsyncGenerator[str, None]:
-            # Send full snapshot immediately on connect
-            pool_stats = await container_service.pool_stats()
+        async def build_snapshot() -> dict:
             containers = await container_service.list_containers()
-            snapshot = {
+            return {
                 "type": "snapshot",
                 "data": {
                     "session_id": session_id,
-                    "pool": pool_stats,
+                    "pool": await container_service.pool_stats(),
                     "containers": [
                         {
                             "id": c.id,
@@ -107,17 +105,26 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
                     "tool_calls": session_store.get_tool_calls(session_id),
                 },
             }
-            yield f"data: {json.dumps(snapshot)}\n\n"
 
+        _RECONCILE_INTERVAL = 10  # push fresh container state every 10s
+
+        async def event_generator() -> AsyncGenerator[str, None]:
+            yield f"data: {json.dumps(await build_snapshot())}\n\n"
+
+            last_reconcile = time.time()
             try:
                 while True:
                     if await request.is_disconnected():
                         break
                     try:
-                        event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                        event = await asyncio.wait_for(queue.get(), timeout=5.0)
                         yield f"data: {json.dumps(event)}\n\n"
                     except asyncio.TimeoutError:
-                        yield ": ping\n\n"
+                        pass
+
+                    if time.time() - last_reconcile >= _RECONCILE_INTERVAL:
+                        yield f"data: {json.dumps(await build_snapshot())}\n\n"
+                        last_reconcile = time.time()
             finally:
                 await session_store.unsubscribe(session_id, queue)
 
