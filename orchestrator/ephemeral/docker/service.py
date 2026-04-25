@@ -300,13 +300,22 @@ class ContainerService:
                 if container.state == ContainerState.terminated:
                     continue
                 dc = live.get(cid)
-                if dc is None or dc.status in ("exited", "dead", "removing"):
+                if dc is None or dc.status in ("dead", "removing"):
+                    # Fully gone from Docker — remove from display
                     container.state = ContainerState.terminated
                     sig = container.spec.signature()
                     queue = self._ready_by_signature.get(sig, [])
                     if cid in queue:
                         queue.remove(cid)
-                    _log.info("Sync: container %s disappeared, marked terminated", cid)
+                    _log.info("Sync: container %s deleted, marked terminated", cid)
+                elif dc.status == "exited" and container.state not in (ContainerState.stopped, ContainerState.terminated):
+                    # Stopped in Docker but still exists — keep visible
+                    container.state = ContainerState.stopped
+                    sig = container.spec.signature()
+                    queue = self._ready_by_signature.get(sig, [])
+                    if cid in queue:
+                        queue.remove(cid)
+                    _log.info("Sync: container %s exited, marked stopped", cid)
                     continue
 
                 health = self._docker_health(dc)
@@ -366,11 +375,14 @@ class ContainerService:
                 state = ContainerState.ready
             elif dc.status in ("created", "paused", "restarting"):
                 state = ContainerState.warming
+            elif dc.status == "exited":
+                state = ContainerState.stopped
             else:
                 state = ContainerState.terminated
 
             if state == ContainerState.terminated:
                 continue
+            # stopped containers are kept so the agent can prune them
 
             try:
                 tier_label = dc.labels.get("ephemeral.tier", "medium")

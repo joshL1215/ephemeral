@@ -9,8 +9,9 @@ class ContainerState(str, Enum):
     ready = "ready"
     assigned = "assigned"
     degraded = "degraded"
+    stopped = "stopped"      # exited in Docker, still exists, pruneable
     terminating = "terminating"
-    terminated = "terminated"
+    terminated = "terminated"  # removed from Docker, disappears
 
 
 class ResourceTier(str, Enum):
