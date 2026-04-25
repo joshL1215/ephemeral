@@ -264,14 +264,25 @@ class ContainerService:
             stats[key] = stats.get(key, 0) + 1
         return stats
 
+    @staticmethod
+    def _docker_health(dc) -> str | None:
+        """Returns Docker health status string or None if no health check."""
+        try:
+            return dc.attrs["State"]["Health"]["Status"]
+        except (KeyError, TypeError):
+            return None
+
     async def _sync_from_docker(self) -> None:
         """Pull live Docker state and update in-memory records to match."""
         def _list():
+            containers = self._client.containers.list(
+                all=True, filters={"label": "ephemeral.id"}
+            )
+            for dc in containers:
+                dc.reload()  # ensure attrs (including Health) are fresh
             return {
                 dc.labels["ephemeral.id"]: dc
-                for dc in self._client.containers.list(
-                    all=True, filters={"label": "ephemeral.id"}
-                )
+                for dc in containers
                 if "ephemeral.id" in dc.labels
             }
 
@@ -287,15 +298,27 @@ class ContainerService:
                     continue
                 dc = live.get(cid)
                 if dc is None or dc.status in ("exited", "dead", "removing"):
-                    # Container is gone — mark terminated
                     container.state = ContainerState.terminated
                     sig = container.spec.signature()
                     queue = self._ready_by_signature.get(sig, [])
                     if cid in queue:
                         queue.remove(cid)
                     _log.info("Sync: container %s disappeared, marked terminated", cid)
-                elif dc.status == "running" and container.state == ContainerState.warming:
-                    # Was warming, now running — promote to ready
+                    continue
+
+                health = self._docker_health(dc)
+                is_healthy = dc.status == "running" and health != "unhealthy"
+                is_unhealthy = health == "unhealthy"
+
+                if is_unhealthy and container.state in (ContainerState.ready, ContainerState.warming):
+                    # Demote — Docker health check is failing
+                    container.state = ContainerState.terminated
+                    sig = container.spec.signature()
+                    queue = self._ready_by_signature.get(sig, [])
+                    if cid in queue:
+                        queue.remove(cid)
+                    _log.info("Sync: container %s is unhealthy, marking terminated", cid)
+                elif is_healthy and container.state == ContainerState.warming:
                     container.state = ContainerState.ready
                     container.ready_at = container.ready_at or time.time()
                     sig = container.spec.signature()
@@ -329,13 +352,14 @@ class ContainerService:
             if dc.status in ("removing", "dead"):
                 continue
 
-            # Map Docker status → ContainerState
-            if dc.status == "running":
+            # Map Docker status → ContainerState, respecting health check
+            health = self._docker_health(dc)
+            if dc.status == "running" and health != "unhealthy":
                 state = ContainerState.ready
+            elif dc.status == "running" and health == "unhealthy":
+                state = ContainerState.terminated
             elif dc.status in ("created", "paused", "restarting"):
                 state = ContainerState.warming
-            elif dc.status == "exited":
-                state = ContainerState.terminated
             else:
                 state = ContainerState.terminated
 
