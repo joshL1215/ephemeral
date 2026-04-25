@@ -332,18 +332,7 @@ class ContainerService:
                     _log.info("Sync: container %s exited, marked stopped", cid)
                     continue
 
-                health = self._docker_health(dc)
-                is_unhealthy = health == "unhealthy"
-                is_healthy = dc.status == "running" and not is_unhealthy
-
-                if is_unhealthy and container.state != ContainerState.degraded:
-                    container.state = ContainerState.degraded
-                    sig = container.spec.signature()
-                    queue = self._ready_by_signature.get(sig, [])
-                    if cid in queue:
-                        queue.remove(cid)
-                    _log.info("Sync: container %s is unhealthy, marked degraded", cid)
-                elif is_healthy and container.state in (ContainerState.warming, ContainerState.degraded):
+                if dc.status == "running" and container.state == ContainerState.warming:
                     container.state = ContainerState.ready
                     container.ready_at = container.ready_at or time.time()
                     sig = container.spec.signature()
@@ -381,11 +370,11 @@ class ContainerService:
             if dc.status in ("removing", "dead"):
                 continue
 
-            # Map Docker status → ContainerState, respecting health check
-            health = self._docker_health(dc)
-            if dc.status == "running" and health == "unhealthy":
-                state = ContainerState.degraded
-            elif dc.status == "running":
+            # Map Docker status → ContainerState
+            # We ignore Docker's HEALTHCHECK — images like scipy-notebook check for
+            # Jupyter which we don't run. Our own Python probe in wait_ready() is the
+            # real readiness signal.
+            if dc.status == "running":
                 state = ContainerState.ready
             elif dc.status in ("created", "paused", "restarting"):
                 state = ContainerState.warming
