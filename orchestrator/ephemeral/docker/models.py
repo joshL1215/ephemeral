@@ -8,6 +8,7 @@ class ContainerState(str, Enum):
     warming = "warming"
     ready = "ready"
     assigned = "assigned"
+    degraded = "degraded"
     terminating = "terminating"
     terminated = "terminated"
 

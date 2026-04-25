@@ -307,22 +307,22 @@ class ContainerService:
                     continue
 
                 health = self._docker_health(dc)
-                is_healthy = dc.status == "running" and health != "unhealthy"
                 is_unhealthy = health == "unhealthy"
+                is_healthy = dc.status == "running" and not is_unhealthy
 
-                if is_unhealthy and container.state in (ContainerState.ready, ContainerState.warming):
-                    # Demote — Docker health check is failing
-                    container.state = ContainerState.terminated
+                if is_unhealthy and container.state != ContainerState.degraded:
+                    container.state = ContainerState.degraded
                     sig = container.spec.signature()
                     queue = self._ready_by_signature.get(sig, [])
                     if cid in queue:
                         queue.remove(cid)
-                    _log.info("Sync: container %s is unhealthy, marking terminated", cid)
-                elif is_healthy and container.state == ContainerState.warming:
+                    _log.info("Sync: container %s is unhealthy, marked degraded", cid)
+                elif is_healthy and container.state in (ContainerState.warming, ContainerState.degraded):
                     container.state = ContainerState.ready
                     container.ready_at = container.ready_at or time.time()
                     sig = container.spec.signature()
-                    self._ready_by_signature.setdefault(sig, []).append(cid)
+                    if cid not in self._ready_by_signature.get(sig, []):
+                        self._ready_by_signature.setdefault(sig, []).append(cid)
                     _log.info("Sync: container %s promoted to ready", cid)
 
     async def reconcile(self) -> int:
@@ -354,10 +354,10 @@ class ContainerService:
 
             # Map Docker status → ContainerState, respecting health check
             health = self._docker_health(dc)
-            if dc.status == "running" and health != "unhealthy":
+            if dc.status == "running" and health == "unhealthy":
+                state = ContainerState.degraded
+            elif dc.status == "running":
                 state = ContainerState.ready
-            elif dc.status == "running" and health == "unhealthy":
-                state = ContainerState.terminated
             elif dc.status in ("created", "paused", "restarting"):
                 state = ContainerState.warming
             else:
