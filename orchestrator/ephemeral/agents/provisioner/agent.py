@@ -15,7 +15,7 @@ from .tools import TOOLS, dispatch_tool_call
 _log = logging.getLogger("ephemeral.provisioner")
 
 _MAX_POOL_PER_SESSION = 5
-_PRUNE_THRESHOLD = 8.0  # weighted units before pruning pass fires
+_PRUNE_THRESHOLD = 6.0  # weighted units before pruning pass fires
 _TIER_WEIGHTS = {"light": 0.5, "medium": 1.0, "heavy": 2.0}
 
 # Tools available only during the pruning pass
