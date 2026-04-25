@@ -1,5 +1,5 @@
 :root {
-  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: #ffffff;
   background: #000000;
   font-synthesis: none;
@@ -29,25 +29,25 @@ body {
 
 .app-shell {
   height: 100vh;
-  padding: 20px;
+  padding: 12px;
 }
 
 .frame {
   height: 100%;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.02);
   display: grid;
   grid-template-rows: auto 1fr;
-  padding: 18px;
-  gap: 18px;
+  padding: 12px;
+  gap: 12px;
 }
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .session-label,
@@ -56,13 +56,14 @@ body {
 }
 
 .session-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
+  font-weight: 500;
 }
 
 .session-id {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.88);
 }
 
@@ -70,41 +71,54 @@ body {
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  gap: 12px;
 }
 
 .panel {
   min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.02);
-  padding: 16px;
+  padding: 12px;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 14px;
+  gap: 10px;
 }
 
 .panel-header h1 {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .stack {
   min-height: 0;
+  gap: 8px;
+  overflow: auto;
+}
+
+.stack-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.stack-fill {
   display: grid;
-  gap: 10px;
+  grid-auto-rows: 1fr;
 }
 
 .row {
-  min-height: 72px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  border-radius: 6px;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -115,18 +129,20 @@ body {
 
 .primary {
   color: #ffffff;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 500;
+  line-height: 1.2;
 }
 
 .row-meta {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   text-align: right;
 }
 
 .secondary {
-  font-size: 0.84rem;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 .align-end {
@@ -138,11 +154,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 84px;
-  padding: 6px 10px;
-  border-radius: 4px;
+  min-width: 70px;
+  padding: 3px 7px;
+  border-radius: 0;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  font-size: 0.73rem;
+  font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -172,18 +188,18 @@ body {
   place-items: center;
   color: rgba(255, 255, 255, 0.5);
   border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 @media (max-width: 900px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .frame {
-    padding: 12px;
-    gap: 12px;
-    border-radius: 6px;
+    padding: 10px;
+    gap: 10px;
+    border-radius: 0;
   }
 
   .grid {

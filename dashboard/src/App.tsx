@@ -26,13 +26,13 @@ export function App() {
     <main className="app-shell">
       <div className="frame">
         <header className="topbar">
-          <span className="session-label">Session</span>
+          <span className="session-label">Ephemeral</span>
           <span className="session-id">{sessionId}</span>
         </header>
 
         <section className="grid">
           <Panel title="Containers">
-            <div className="stack">
+            <div className="stack stack-compact">
               {snapshot?.containers.map((container) => (
                 <ContainerRow container={container} key={container.id} />
               )) ?? <EmptyState />}
@@ -40,7 +40,7 @@ export function App() {
           </Panel>
 
           <Panel title="Agents">
-            <div className="stack">
+            <div className="stack stack-fill">
               {snapshot?.agents.map((agent) => (
                 <AgentRow agent={agent} key={agent.id} />
               )) ?? <EmptyState />}

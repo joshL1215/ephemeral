@@ -25,8 +25,8 @@ export const mockSessionSnapshot: SessionSnapshot = {
   agents: [
     {
       id: "agent-01",
-      name: "Session Coordinator",
-      model: "gpt-5.2",
+      name: "Container Provisioning Agent",
+      model: "K2 Think V2",
       state: "running",
       currentTask: "Monitoring session resources",
       lastAction: "Fetched latest container snapshot",
@@ -34,7 +34,7 @@ export const mockSessionSnapshot: SessionSnapshot = {
     {
       id: "agent-02",
       name: "Dependency Mapper",
-      model: "gpt-5.4-mini",
+      model: "K2 Think V2",
       state: "waiting",
       currentTask: "Waiting for dependency inspection event",
       lastAction: "Queued dependency graph refresh",
