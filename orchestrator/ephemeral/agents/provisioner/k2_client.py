@@ -8,7 +8,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
-_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+# Matches both <think>...</think> and bare ......</think> (model sometimes omits opening tag)
+_THINK_RE = re.compile(r"(?:<think>)?(.*?)</think>", re.DOTALL)
 
 _log = logging.getLogger("ephemeral.k2")
 
@@ -29,9 +30,15 @@ class K2Response(BaseModel):
 
 
 class K2Client:
-    def __init__(self, api_key: str, base_url: str = _BASE_URL) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = _BASE_URL,
+        reasoning_effort: str = "medium",
+    ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
+        self._reasoning_effort = reasoning_effort
 
     async def complete(
         self,
@@ -44,6 +51,9 @@ class K2Client:
             "temperature": 1.0,
             "top_p": 1.0,
             "max_tokens": 16384,
+            "extra_body": {
+                "chat_template_kwargs": {"reasoning_effort": self._reasoning_effort}
+            },
         }
         if tools:
             payload["tools"] = tools
@@ -114,4 +124,5 @@ def k2_client_from_env() -> K2Client:
     from dotenv import load_dotenv
     load_dotenv()
     api_key = os.environ["K2_API_KEY"]
-    return K2Client(api_key=api_key)
+    reasoning_effort = os.environ.get("K2_REASONING_EFFORT", "medium")
+    return K2Client(api_key=api_key, reasoning_effort=reasoning_effort)

@@ -86,10 +86,10 @@ async def test_llm_failure_does_not_raise():
 @pytest.mark.asyncio
 async def test_skips_warm_when_pool_already_covered():
     agent, svc, k2 = _make_agent(
-        pool_stats={"python-data:ready": 1},
+        pool_stats={"python-data:medium:ready": 1},
         tool_calls=[
             ToolCall(id="c1", name="warm_containers",
-                     arguments={"profile_name": "python-data", "count": 1, "reasoning": "test"})
+                     arguments={"profile_name": "python-data", "resource_tier": "medium", "count": 1, "reasoning": "test"})
         ],
     )
     await agent.on_context_event("s1", _event("pandas csv"))
@@ -112,13 +112,10 @@ async def test_session_cap_prevents_over_warming():
 # ------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_reasoning_content_published(monkeypatch):
-    published = []
-
-    async def fake_publish(event_type, data):
-        published.append((event_type, data))
-
-    monkeypatch.setattr("ephemeral.agents.provisioner.agent.publish", fake_publish)
+async def test_reasoning_content_logged():
+    from ephemeral.sessions import get_store
+    store = get_store()
+    store.get_or_create("s_reasoning")
 
     agent, svc, k2 = _make_agent()
     k2.complete = AsyncMock(return_value=K2Response(
@@ -126,5 +123,6 @@ async def test_reasoning_content_published(monkeypatch):
         reasoning_content="I think the user needs data tools.",
         tool_calls=[],
     ))
-    await agent.on_context_event("s1", _event("something"))
-    assert any(t == "provisioner.reasoning" for t, _ in published)
+    await agent.on_context_event("s_reasoning", _event("something"))
+    logs = [e["message"] for e in store.get_logs("s_reasoning")]
+    assert any("I think the user needs data tools" in m for m in logs)
