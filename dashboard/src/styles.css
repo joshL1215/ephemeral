@@ -208,11 +208,6 @@ body {
   border-bottom: 0;
 }
 
-.agent-log-line-tool_call,
-.agent-log-line-outcome {
-  font-family: ui-monospace, "SFMono-Regular", "SF Mono", Consolas, monospace;
-}
-
 .agent-log-time {
   color: rgba(255, 255, 255, 0.42);
   font-variant-numeric: tabular-nums;

@@ -93,7 +93,12 @@ class ContainerService:
         async with self._lock:
             self._containers[container_id].state = ContainerState.warming
 
-        await publish("container.started", {"id": container_id})
+        await publish("container.started", {
+            "id": container_id,
+            "profile": container.profile_name,
+            "resource_tier": container.spec.resource_tier.value,
+            "state": ContainerState.warming.value,
+        })
         _log.info("Started container %s → warming", container_id)
 
     async def wait_ready(self, container_id: str, timeout_s: float = 30.0) -> None:
@@ -136,7 +141,14 @@ class ContainerService:
             self._containers[container_id].ready_at = now
             self._ready_by_signature.setdefault(sig, []).append(container_id)
 
-        await publish("container.ready", {"id": container_id})
+        container = self._containers[container_id]
+        await publish("container.ready", {
+            "id": container_id,
+            "profile": container.profile_name,
+            "resource_tier": container.spec.resource_tier.value,
+            "state": ContainerState.ready.value,
+            "ready_at": now,
+        })
         _log.info("Container %s is ready (sig=%s)", container_id, sig)
 
     async def warm(self, profile_name: str, count: int = 1, spec: ContainerSpec | None = None) -> list[Container]:

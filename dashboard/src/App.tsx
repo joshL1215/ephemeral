@@ -132,7 +132,7 @@ function AgentCard(props: { agent: AgentSummary }) {
       </div>
       <div className="agent-detail">
         <span className="secondary">Current task</span>
-        <ExpandableText className="primary agent-text" text={agent.currentTask} />
+        <ExpandableText className="primary agent-text" text={getCurrentTaskLabel(agent)} />
       </div>
       <div className="agent-detail agent-log-block">
         <div className="agent-log-section">
@@ -259,7 +259,13 @@ function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent
         orchestratorAgent: {
           ...currentSnapshot.orchestratorAgent,
           state: event.state ?? currentSnapshot.orchestratorAgent.state,
-          currentTask: event.currentTask ?? currentSnapshot.orchestratorAgent.currentTask,
+          currentTask:
+            event.currentTask ??
+            (event.entry.kind === "tool_call"
+              ? event.entry.text
+              : event.entry.kind === "reasoning"
+                ? "Thinking"
+                : "Idle"),
           logs: [...currentSnapshot.orchestratorAgent.logs, event.entry].slice(-64),
         },
       };
@@ -311,4 +317,28 @@ function formatLogTime(ts: number) {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function getCurrentTaskLabel(agent: AgentSummary) {
+  const task = agent.currentTask.trim();
+
+  if (!task) {
+    return "Idle";
+  }
+
+  const idleLike = [
+    "idle",
+    "monitoring",
+    "waiting",
+    "standing by",
+    "ready",
+    "completed",
+    "done",
+  ];
+
+  if (idleLike.some((token) => task.toLowerCase().startsWith(token))) {
+    return "Idle";
+  }
+
+  return task;
 }

@@ -90,8 +90,26 @@ export function getSessionSource() {
   return mockSessionSource;
 }
 
+type RawContainer = {
+  id: string;
+  profile: string;
+  resource_tier?: string;
+  state: string;
+  created_at?: number;
+  ready_at?: number | null;
+  assigned_to?: string | null;
+};
+
+type RawLogEntry = { ts: number; message: string };
+type RawToolCall = { ts: number; tool: string; args: Record<string, unknown>; result: string };
+
 function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
-  const legacy = snapshot as SessionSnapshot & {
+  const raw = snapshot as SessionSnapshot & {
+    session_id?: string;
+    containers?: RawContainer[];
+    logs?: RawLogEntry[];
+    tool_calls?: RawToolCall[];
+    pool?: Record<string, number>;
     deployedContainers?: SessionSnapshot["deployedSandboxes"];
     containerPool?: SessionSnapshot["sandboxPool"];
     orchestrator_agent?: AgentSummary;
@@ -99,17 +117,68 @@ function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
     agents?: AgentSummary[];
   };
 
+  const sessionId = snapshot.sessionId ?? raw.session_id ?? "";
+  const allContainers = raw.containers ?? [];
+
+  const deployedSandboxes =
+    snapshot.deployedSandboxes ??
+    raw.deployedContainers ??
+    allContainers
+      .filter((c) => c.state === "assigned")
+      .map(containerToSandbox);
+
+  const sandboxPool =
+    snapshot.sandboxPool ??
+    raw.containerPool ??
+    allContainers
+      .filter((c) => c.state !== "assigned" && c.state !== "terminated" && c.state !== "terminating")
+      .map(containerToSandbox);
+
+  // Merge backend logs + tool_calls into a sorted AgentLogEntry list
+  const logEntries: AgentLogEntry[] = [
+    ...(raw.logs ?? []).map((l) => ({
+      kind: "reasoning" as const,
+      text: l.message,
+      ts: l.ts,
+    })),
+    ...(raw.tool_calls ?? []).map((tc) => ({
+      kind: "tool_call" as const,
+      text: formatToolCall(tc),
+      ts: tc.ts,
+    })),
+  ].sort((a, b) => a.ts - b.ts);
+
+  const orchestratorAgent = normalizeAgent(
+    snapshot.orchestratorAgent ?? raw.orchestrator_agent ?? raw.agent ?? raw.agents?.[0],
+    logEntries,
+  );
+
   return {
     ...snapshot,
-    deployedSandboxes: snapshot.deployedSandboxes ?? legacy.deployedContainers ?? [],
-    sandboxPool: snapshot.sandboxPool ?? legacy.containerPool ?? [],
-    orchestratorAgent: normalizeAgent(
-      snapshot.orchestratorAgent ??
-        legacy.orchestrator_agent ??
-        legacy.agent ??
-        legacy.agents?.[0],
-    ),
+    sessionId,
+    deployedSandboxes,
+    sandboxPool,
+    orchestratorAgent,
   };
+}
+
+function containerToSandbox(c: RawContainer): import("../types").SandboxSummary {
+  const label = c.resource_tier ? `${c.profile} [${c.resource_tier}]` : c.profile;
+  return {
+    id: c.id,
+    name: label,
+    status: mapSandboxStatus(c.state),
+    uptime: c.ready_at
+      ? `ready ${Math.round((Date.now() / 1000 - c.ready_at))}s ago`
+      : c.state,
+  };
+}
+
+function formatToolCall(tc: RawToolCall): string {
+  const args = Object.entries(tc.args)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(", ");
+  return `${tc.tool}(${args}) → ${tc.result}`;
 }
 
 function normalizeEvent(event: Record<string, unknown>, sessionId: string): SessionEvent {
@@ -298,7 +367,7 @@ function normalizeEvent(event: Record<string, unknown>, sessionId: string): Sess
   };
 }
 
-function normalizeAgent(agent: unknown): AgentSummary {
+function normalizeAgent(agent: unknown, backendLogs: AgentLogEntry[] = []): AgentSummary {
   const fallback = (asRecord(agent) ?? {}) as Partial<AgentSummary> & {
     current_task?: string;
     lastAction?: string;
@@ -321,14 +390,16 @@ function normalizeAgent(agent: unknown): AgentSummary {
       fallback?.last_action ??
       "Waiting for backend state",
     logs:
-      normalizeLogEntries(
-        fallback.logs ??
-          fallback?.logLines ??
-          fallback?.log_lines ??
-          fallback?.thoughts ??
-          fallback?.reasoning ??
-          (fallback?.lastAction ? [fallback.lastAction] : []),
-      ),
+      backendLogs.length > 0
+        ? backendLogs
+        : normalizeLogEntries(
+            fallback.logs ??
+              fallback?.logLines ??
+              fallback?.log_lines ??
+              fallback?.thoughts ??
+              fallback?.reasoning ??
+              (fallback?.lastAction ? [fallback.lastAction] : []),
+          ),
   };
 }
 
@@ -416,8 +487,11 @@ function extractSandbox(
   const id =
     firstString(record.id, record.container_id, record.docker_id, record.dockerId) ??
     crypto.randomUUID().slice(0, 12);
+  const profileName = firstString(record.profile_name, record.profile);
+  const tier = firstString(record.resource_tier);
   const name =
-    firstString(record.name, record.container_name, record.profile_name, record.profile) ??
+    firstString(record.name, record.container_name) ??
+    (profileName && tier ? `${profileName} [${tier}]` : profileName) ??
     id;
 
   return {
