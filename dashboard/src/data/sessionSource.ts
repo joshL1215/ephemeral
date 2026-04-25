@@ -33,7 +33,7 @@ export function createBackendSessionSource(baseUrl = ""): SessionSource {
         throw new Error(`Snapshot request failed with ${response.status}`);
       }
 
-      return (await response.json()) as SessionSnapshot;
+      return normalizeSnapshot((await response.json()) as SessionSnapshot);
     },
 
     subscribe(sessionId, handlers) {
@@ -43,7 +43,7 @@ export function createBackendSessionSource(baseUrl = ""): SessionSource {
 
       stream.onmessage = (message) => {
         try {
-          handlers.onEvent(JSON.parse(message.data) as SessionEvent);
+          handlers.onEvent(normalizeEvent(JSON.parse(message.data) as SessionEvent));
         } catch (error) {
           handlers.onError?.(
             error instanceof Error ? error : new Error("Failed to parse stream event"),
@@ -71,6 +71,42 @@ export function getSessionSource() {
   }
 
   return mockSessionSource;
+}
+
+function normalizeSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
+  const legacy = snapshot as SessionSnapshot & {
+    deployedContainers?: SessionSnapshot["deployedSandboxes"];
+    containerPool?: SessionSnapshot["sandboxPool"];
+  };
+
+  return {
+    ...snapshot,
+    deployedSandboxes: snapshot.deployedSandboxes ?? legacy.deployedContainers ?? [],
+    sandboxPool: snapshot.sandboxPool ?? legacy.containerPool ?? [],
+  };
+}
+
+function normalizeEvent(event: SessionEvent): SessionEvent {
+  const legacy = event as SessionEvent & {
+    deployedContainers?: SessionSnapshot["deployedSandboxes"];
+    containerPool?: SessionSnapshot["sandboxPool"];
+  };
+
+  if (event.type === "deployed_containers") {
+    return {
+      ...event,
+      deployedSandboxes: event.deployedSandboxes ?? legacy.deployedContainers ?? [],
+    };
+  }
+
+  if (event.type === "sandbox_pool") {
+    return {
+      ...event,
+      sandboxPool: event.sandboxPool ?? legacy.containerPool ?? [],
+    };
+  }
+
+  return event;
 }
 
 function wait(ms: number) {

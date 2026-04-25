@@ -1,6 +1,6 @@
 export type ContainerStatus = "healthy" | "degraded" | "starting" | "stopped";
 
-export type ContainerSummary = {
+export type SandboxSummary = {
   id: string;
   name: string;
   status: ContainerStatus;
@@ -20,8 +20,8 @@ export type AgentSummary = {
 
 export type SessionSnapshot = {
   sessionId: string;
-  deployedContainers: ContainerSummary[];
-  containerPool: ContainerSummary[];
+  deployedSandboxes: SandboxSummary[];
+  sandboxPool: SandboxSummary[];
   orchestratorAgent: AgentSummary;
 };
 
@@ -32,11 +32,11 @@ export type SessionEvent =
     }
   | {
       type: "deployed_containers";
-      deployedContainers: ContainerSummary[];
+      deployedSandboxes: SandboxSummary[];
     }
   | {
-      type: "container_pool";
-      containerPool: ContainerSummary[];
+      type: "sandbox_pool";
+      sandboxPool: SandboxSummary[];
     }
   | {
       type: "agent";

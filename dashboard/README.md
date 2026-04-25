@@ -2,7 +2,7 @@
 
 Minimal React + TypeScript + Vite scaffold with two panels:
 
-- containers and their status
+- sandboxes and their status
 - agents and their status
 
 The data is currently mocked in `src/data/mockSession.ts` and accessed through `src/data/sessionSource.ts` so it can be replaced with backend snapshot/SSE wiring later.
@@ -34,14 +34,14 @@ Snapshot response shape:
 ```json
 {
   "sessionId": "sess-demo-2048",
-  "deployedContainers": [],
-  "containerPool": [],
+  "deployedSandboxes": [],
+  "sandboxPool": [],
   "orchestratorAgent": {
     "id": "agent-01",
-    "name": "Container Orchestrator Agent",
+    "name": "Sandbox Orchestrator Agent",
     "model": "K2 Think V2",
     "state": "running",
-    "currentTask": "Allocating warm containers",
+    "currentTask": "Allocating warm sandboxes",
     "logs": []
   }
 }
@@ -54,11 +54,11 @@ SSE message payloads can be one of:
 ```
 
 ```json
-{ "type": "deployed_containers", "deployedContainers": [] }
+{ "type": "deployed_containers", "deployedSandboxes": [] }
 ```
 
 ```json
-{ "type": "container_pool", "containerPool": [] }
+{ "type": "sandbox_pool", "sandboxPool": [] }
 ```
 
 ```json

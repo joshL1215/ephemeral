@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getSessionSource } from "./data/sessionSource";
 import type {
   AgentSummary,
-  ContainerSummary,
+  SandboxSummary,
   SessionEvent,
   SessionSnapshot,
 } from "./types";
@@ -56,10 +56,10 @@ export function App() {
         </header>
 
         <section className="layout">
-          <Panel className="deployed-panel" title="Deployed Containers">
+          <Panel className="deployed-panel" title="Deployed Sandboxes">
             <div className="stack stack-compact">
-              {snapshot?.deployedContainers.map((container) => (
-                <ContainerRow container={container} key={container.id} />
+              {snapshot?.deployedSandboxes.map((sandbox) => (
+                <SandboxRow sandbox={sandbox} key={sandbox.id} />
               )) ?? <EmptyState />}
             </div>
           </Panel>
@@ -69,10 +69,10 @@ export function App() {
               {snapshot ? <AgentCard agent={snapshot.orchestratorAgent} /> : <EmptyState />}
             </Panel>
 
-            <Panel title="Container Pool">
+            <Panel title="Sandbox Pool">
               <div className="stack stack-compact">
-                {snapshot?.containerPool.map((container) => (
-                  <ContainerRow container={container} key={container.id} />
+                {snapshot?.sandboxPool.map((sandbox) => (
+                  <SandboxRow sandbox={sandbox} key={sandbox.id} />
                 )) ?? <EmptyState />}
               </div>
             </Panel>
@@ -94,18 +94,18 @@ function Panel(props: { title: string; children: ReactNode; className?: string }
   );
 }
 
-function ContainerRow(props: { container: ContainerSummary }) {
-  const { container } = props;
+function SandboxRow(props: { sandbox: SandboxSummary }) {
+  const { sandbox } = props;
 
   return (
     <article className="row">
       <div>
-        <div className="primary">{container.name}</div>
-        <div className="secondary">{container.id}</div>
+        <div className="primary">{sandbox.name}</div>
+        <div className="secondary">{sandbox.id}</div>
       </div>
       <div className="row-meta">
-        <span className={`status status-${container.status}`}>{container.status}</span>
-        <span className="secondary">{container.uptime}</span>
+        <span className={`status status-${sandbox.status}`}>{sandbox.status}</span>
+        <span className="secondary">{sandbox.uptime}</span>
       </div>
     </article>
   );
@@ -152,12 +152,12 @@ function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent
     case "deployed_containers":
       return {
         ...currentSnapshot,
-        deployedContainers: event.deployedContainers,
+        deployedSandboxes: event.deployedSandboxes,
       };
-    case "container_pool":
+    case "sandbox_pool":
       return {
         ...currentSnapshot,
-        containerPool: event.containerPool,
+        sandboxPool: event.sandboxPool,
       };
     case "agent":
       return {

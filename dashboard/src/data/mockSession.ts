@@ -2,27 +2,27 @@ import type { SessionSnapshot } from "../types";
 
 export const mockSessionSnapshot: SessionSnapshot = {
   sessionId: "sess-demo-2048",
-  deployedContainers: [
+  deployedSandboxes: [
     {
       id: "ctr-api-7f3a",
-      name: "session-api",
+      name: "session-sandbox-a",
       status: "healthy",
       uptime: "4h 12m",
     },
     {
       id: "ctr-worker-1b28",
-      name: "dependency-indexer",
+      name: "analysis-sandbox-b",
       status: "degraded",
       uptime: "1h 07m",
     },
     {
       id: "ctr-agent-91af",
-      name: "agent-runtime",
+      name: "runtime-sandbox-c",
       status: "starting",
       uptime: "18m",
     },
   ],
-  containerPool: [
+  sandboxPool: [
     {
       id: "ctr-pool-14d1",
       name: "sandbox-node-a",
@@ -50,12 +50,12 @@ export const mockSessionSnapshot: SessionSnapshot = {
   ],
   orchestratorAgent: {
     id: "agent-01",
-    name: "Container Orchestrator Agent",
+    name: "Sandbox Orchestrator Agent",
     model: "K2 Think V2",
     state: "running",
-    currentTask: "Allocating warm containers to the active session",
+    currentTask: "Allocating warm sandboxes to the active session",
     logs: [
-      "pool scan: 4 standby containers available",
+      "pool scan: 4 standby sandboxes available",
       "selected sandbox-node-a for reservation",
       "deployment handoff initiated for ctr-api-7f3a",
       "waiting for runtime confirmation from backend",
