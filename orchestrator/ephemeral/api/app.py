@@ -138,4 +138,23 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
     async def list_sessions():
         return {"sessions": session_store.list_sessions()}
 
+    @app.get("/api/debug/containers")
+    async def debug_containers():
+        def _list():
+            import docker as docker_lib
+            client = docker_lib.from_env()
+            results = []
+            for dc in client.containers.list(all=True, filters={"label": "ephemeral.id"}):
+                dc.reload()
+                state = dc.attrs.get("State", {})
+                results.append({
+                    "id": dc.labels.get("ephemeral.id"),
+                    "docker_id": dc.id[:12],
+                    "status": dc.status,
+                    "health": state.get("Health", {}).get("Status") if state.get("Health") else None,
+                    "raw_state_keys": list(state.keys()),
+                })
+            return results
+        return {"containers": await asyncio.to_thread(_list)}
+
     return app

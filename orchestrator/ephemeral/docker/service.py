@@ -268,8 +268,11 @@ class ContainerService:
     def _docker_health(dc) -> str | None:
         """Returns Docker health status string or None if no health check."""
         try:
-            return dc.attrs["State"]["Health"]["Status"]
+            status = dc.attrs["State"]["Health"]["Status"]
+            _log.debug("Health check for %s: %s", dc.labels.get("ephemeral.id"), status)
+            return status
         except (KeyError, TypeError):
+            _log.debug("No health info for %s (state=%s)", dc.labels.get("ephemeral.id"), dc.attrs.get("State", {}).get("Status"))
             return None
 
     async def _sync_from_docker(self) -> None:
