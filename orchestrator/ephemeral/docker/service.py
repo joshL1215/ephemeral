@@ -264,6 +264,44 @@ class ContainerService:
             stats[key] = stats.get(key, 0) + 1
         return stats
 
+    async def _sync_from_docker(self) -> None:
+        """Pull live Docker state and update in-memory records to match."""
+        def _list():
+            return {
+                dc.labels["ephemeral.id"]: dc
+                for dc in self._client.containers.list(
+                    all=True, filters={"label": "ephemeral.id"}
+                )
+                if "ephemeral.id" in dc.labels
+            }
+
+        try:
+            live = await asyncio.to_thread(_list)
+        except Exception as exc:
+            _log.debug("_sync_from_docker failed: %s", exc)
+            return
+
+        async with self._lock:
+            for cid, container in list(self._containers.items()):
+                if container.state == ContainerState.terminated:
+                    continue
+                dc = live.get(cid)
+                if dc is None or dc.status in ("exited", "dead", "removing"):
+                    # Container is gone — mark terminated
+                    container.state = ContainerState.terminated
+                    sig = container.spec.signature()
+                    queue = self._ready_by_signature.get(sig, [])
+                    if cid in queue:
+                        queue.remove(cid)
+                    _log.info("Sync: container %s disappeared, marked terminated", cid)
+                elif dc.status == "running" and container.state == ContainerState.warming:
+                    # Was warming, now running — promote to ready
+                    container.state = ContainerState.ready
+                    container.ready_at = container.ready_at or time.time()
+                    sig = container.spec.signature()
+                    self._ready_by_signature.setdefault(sig, []).append(cid)
+                    _log.info("Sync: container %s promoted to ready", cid)
+
     async def reconcile(self) -> int:
         """Scan Docker for containers with our labels and rebuild in-memory state.
         Called once at startup. Returns the number of containers recovered."""
