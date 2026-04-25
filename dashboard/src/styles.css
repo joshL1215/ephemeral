@@ -22,14 +22,12 @@ body,
 
 body {
   overflow: hidden;
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 32%),
-    #000000;
+  background: #000000;
 }
 
 .app-shell {
   height: 100vh;
-  padding: 12px;
+  padding: 8px;
 }
 
 .frame {
@@ -39,15 +37,15 @@ body {
   background: rgba(255, 255, 255, 0.02);
   display: grid;
   grid-template-rows: auto 1fr;
-  padding: 12px;
-  gap: 12px;
+  padding: 8px;
+  gap: 8px;
 }
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .session-label,
@@ -56,22 +54,29 @@ body {
 }
 
 .session-label {
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 500;
 }
 
 .session-id {
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   color: rgba(255, 255, 255, 0.88);
 }
 
-.grid {
+.layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: minmax(260px, 0.74fr) minmax(440px, 1.26fr);
+  gap: 8px;
+}
+
+.right-column {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(92px, 0.48fr);
+  gap: 8px;
 }
 
 .panel {
@@ -79,15 +84,19 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.02);
-  padding: 12px;
+  padding: 8px;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 10px;
+  gap: 6px;
+}
+
+.deployed-panel {
+  height: 100%;
 }
 
 .panel-header h1 {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -95,8 +104,10 @@ body {
 
 .stack {
   min-height: 0;
-  gap: 8px;
+  gap: 6px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 
 .stack-compact {
@@ -111,54 +122,99 @@ body {
   grid-auto-rows: 1fr;
 }
 
+.agent-card {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.agent-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-detail {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 0;
+}
+
+.agent-text {
+  max-width: 48ch;
+}
+
+.agent-log-block {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.agent-log-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.agent-log-line {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-log-line:last-child {
+  border-bottom: 0;
+}
+
 .row {
-  min-height: 48px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   border-radius: 0;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.agent-row {
-  align-items: flex-start;
-}
-
 .primary {
   color: #ffffff;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 500;
   line-height: 1.2;
 }
 
 .row-meta {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   text-align: right;
 }
 
 .secondary {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   line-height: 1.2;
-}
-
-.align-end {
-  justify-items: end;
-  max-width: 42%;
 }
 
 .status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 70px;
-  padding: 3px 7px;
+  min-width: 62px;
+  padding: 2px 6px;
   border-radius: 0;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  font-size: 0.66rem;
+  font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -191,22 +247,66 @@ body {
   border-radius: 0;
 }
 
+.stack::-webkit-scrollbar {
+  width: 8px;
+}
+
+.stack::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stack::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.stack::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.agent-log-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-log-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-log-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.agent-log-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 @media (max-width: 900px) {
   .app-shell {
-    padding: 10px;
+    padding: 8px;
   }
 
   .frame {
-    padding: 10px;
-    gap: 10px;
+    padding: 8px;
+    gap: 8px;
     border-radius: 0;
   }
 
-  .grid {
+  .layout {
     grid-template-columns: 1fr;
   }
 
   body {
     overflow: auto;
+  }
+
+  .right-column {
+    grid-template-rows: minmax(220px, 1fr) minmax(120px, auto);
   }
 }

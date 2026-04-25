@@ -15,11 +15,30 @@ export type AgentSummary = {
   model: string;
   state: AgentState;
   currentTask: string;
-  lastAction: string;
+  logs: string[];
 };
 
 export type SessionSnapshot = {
   sessionId: string;
-  containers: ContainerSummary[];
-  agents: AgentSummary[];
+  deployedContainers: ContainerSummary[];
+  containerPool: ContainerSummary[];
+  orchestratorAgent: AgentSummary;
 };
+
+export type SessionEvent =
+  | {
+      type: "snapshot";
+      snapshot: SessionSnapshot;
+    }
+  | {
+      type: "deployed_containers";
+      deployedContainers: ContainerSummary[];
+    }
+  | {
+      type: "container_pool";
+      containerPool: ContainerSummary[];
+    }
+  | {
+      type: "agent";
+      orchestratorAgent: AgentSummary;
+    };

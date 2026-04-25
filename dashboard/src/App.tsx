@@ -1,8 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { mockSessionSource } from "./data/sessionSource";
-import type { AgentSummary, ContainerSummary, SessionSnapshot } from "./types";
+import { getSessionSource } from "./data/sessionSource";
+import type {
+  AgentSummary,
+  ContainerSummary,
+  SessionEvent,
+  SessionSnapshot,
+} from "./types";
 
 const DEFAULT_SESSION_ID = "sess-demo-2048";
+const sessionSource = getSessionSource();
 
 export function App() {
   const [sessionId] = useState(DEFAULT_SESSION_ID);
@@ -10,15 +16,34 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    let unsubscribe: (() => void) | undefined;
 
-    void mockSessionSource.getSnapshot(sessionId).then((nextSnapshot) => {
-      if (active) {
-        setSnapshot(nextSnapshot);
+    void sessionSource.getSnapshot(sessionId).then((nextSnapshot) => {
+      if (!active) {
+        return;
       }
+
+      setSnapshot(nextSnapshot);
+
+      unsubscribe = sessionSource.subscribe?.(sessionId, {
+        onEvent(event) {
+          if (!active) {
+            return;
+          }
+
+          setSnapshot((currentSnapshot) =>
+            currentSnapshot ? applySessionEvent(currentSnapshot, event) : currentSnapshot,
+          );
+        },
+        onError(error) {
+          console.error("observability stream error", error);
+        },
+      });
     });
 
     return () => {
       active = false;
+      unsubscribe?.();
     };
   }, [sessionId]);
 
@@ -26,35 +51,41 @@ export function App() {
     <main className="app-shell">
       <div className="frame">
         <header className="topbar">
-          <span className="session-label">Ephemeral</span>
+          <span className="session-label">EPHEMERAL OBSERVABILITY DASHBOARD</span>
           <span className="session-id">{sessionId}</span>
         </header>
 
-        <section className="grid">
-          <Panel title="Containers">
+        <section className="layout">
+          <Panel className="deployed-panel" title="Deployed Containers">
             <div className="stack stack-compact">
-              {snapshot?.containers.map((container) => (
+              {snapshot?.deployedContainers.map((container) => (
                 <ContainerRow container={container} key={container.id} />
               )) ?? <EmptyState />}
             </div>
           </Panel>
 
-          <Panel title="Agents">
-            <div className="stack stack-fill">
-              {snapshot?.agents.map((agent) => (
-                <AgentRow agent={agent} key={agent.id} />
-              )) ?? <EmptyState />}
-            </div>
-          </Panel>
+          <section className="right-column">
+            <Panel title="Agent Observability">
+              {snapshot ? <AgentCard agent={snapshot.orchestratorAgent} /> : <EmptyState />}
+            </Panel>
+
+            <Panel title="Container Pool">
+              <div className="stack stack-compact">
+                {snapshot?.containerPool.map((container) => (
+                  <ContainerRow container={container} key={container.id} />
+                )) ?? <EmptyState />}
+              </div>
+            </Panel>
+          </section>
         </section>
       </div>
     </main>
   );
 }
 
-function Panel(props: { title: string; children: ReactNode }) {
+function Panel(props: { title: string; children: ReactNode; className?: string }) {
   return (
-    <section className="panel">
+    <section className={`panel${props.className ? ` ${props.className}` : ""}`}>
       <div className="panel-header">
         <h1>{props.title}</h1>
       </div>
@@ -80,20 +111,31 @@ function ContainerRow(props: { container: ContainerSummary }) {
   );
 }
 
-function AgentRow(props: { agent: AgentSummary }) {
+function AgentCard(props: { agent: AgentSummary }) {
   const { agent } = props;
 
   return (
-    <article className="row agent-row">
-      <div>
-        <div className="primary">{agent.name}</div>
-        <div className="secondary">
-          {agent.model} · {agent.currentTask}
+    <article className="agent-card">
+      <div className="agent-card-top">
+        <div>
+          <div className="primary">{agent.name}</div>
+          <div className="secondary">{agent.model}</div>
         </div>
-      </div>
-      <div className="row-meta align-end">
         <span className={`status status-${agent.state}`}>{agent.state}</span>
-        <span className="secondary">{agent.lastAction}</span>
+      </div>
+      <div className="agent-detail">
+        <span className="secondary">Current task</span>
+        <div className="primary agent-text">{agent.currentTask}</div>
+      </div>
+      <div className="agent-detail agent-log-block">
+        <span className="secondary">Logs</span>
+        <div className="agent-log-list">
+          {agent.logs.map((entry, index) => (
+            <div className="secondary agent-log-line" key={`${agent.id}-log-${index}`}>
+              {entry}
+            </div>
+          ))}
+        </div>
       </div>
     </article>
   );
@@ -101,4 +143,28 @@ function AgentRow(props: { agent: AgentSummary }) {
 
 function EmptyState() {
   return <div className="empty">Loading session state…</div>;
+}
+
+function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent): SessionSnapshot {
+  switch (event.type) {
+    case "snapshot":
+      return event.snapshot;
+    case "deployed_containers":
+      return {
+        ...currentSnapshot,
+        deployedContainers: event.deployedContainers,
+      };
+    case "container_pool":
+      return {
+        ...currentSnapshot,
+        containerPool: event.containerPool,
+      };
+    case "agent":
+      return {
+        ...currentSnapshot,
+        orchestratorAgent: event.orchestratorAgent,
+      };
+    default:
+      return currentSnapshot;
+  }
 }

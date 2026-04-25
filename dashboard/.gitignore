@@ -2,6 +2,9 @@ node_modules/
 dist/
 .DS_Store
 *.log
+*.tsbuildinfo
 .env
 .env.*
 .vite
+vite.config.js
+vite.config.d.ts
