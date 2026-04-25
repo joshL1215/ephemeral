@@ -44,6 +44,7 @@ class ContainerService:
                 runtime=_RUNTIME,
                 detach=True,
                 mem_limit=f"{spec.memory_mb}m",
+                nano_cpus=int(spec.cpu_quota * 1e9),
                 labels={"ephemeral.id": cid, "ephemeral.profile": spec.profile_name},
             )
 
@@ -65,7 +66,13 @@ class ContainerService:
         async with self._lock:
             self._containers[cid] = container
 
-        await publish("container.created", {"id": cid, "profile": spec.profile_name})
+        await publish("container.created", {
+            "id": cid,
+            "profile": spec.profile_name,
+            "resource_tier": spec.resource_tier.value,
+            "memory_mb": spec.memory_mb,
+            "cpu_quota": spec.cpu_quota,
+        })
         _log.info("Created container %s (profile=%s)", cid, spec.profile_name)
         return container
 
@@ -132,8 +139,8 @@ class ContainerService:
         await publish("container.ready", {"id": container_id})
         _log.info("Container %s is ready (sig=%s)", container_id, sig)
 
-    async def warm(self, profile_name: str, count: int = 1) -> list[Container]:
-        spec = ContainerSpec(profile_name=profile_name)
+    async def warm(self, profile_name: str, count: int = 1, spec: ContainerSpec | None = None) -> list[Container]:
+        spec = spec or ContainerSpec(profile_name=profile_name)
 
         async def _one():
             c = await self.create(spec)
@@ -235,7 +242,7 @@ class ContainerService:
             containers = list(self._containers.values())
         stats: dict[str, int] = {}
         for c in containers:
-            key = f"{c.profile_name}:{c.state.value}"
+            key = f"{c.profile_name}:{c.spec.resource_tier.value}:{c.state.value}"
             stats[key] = stats.get(key, 0) + 1
         return stats
 

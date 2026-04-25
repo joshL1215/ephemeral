@@ -1,6 +1,7 @@
 import logging
 
 from ephemeral.docker.catalog import CATALOG
+from ephemeral.docker.models import ContainerSpec, ResourceTier
 from ephemeral.docker.service import ContainerService
 
 _log = logging.getLogger("ephemeral.provisioner.tools")
@@ -11,8 +12,11 @@ TOOLS = [
         "function": {
             "name": "warm_containers",
             "description": (
-                "Pre-warm one or more containers of the given profile. Call this when "
-                "you predict the developer's agent will soon need this kind of environment."
+                "Pre-warm one or more containers of the given profile and resource tier. "
+                "Call this when you predict the developer's agent will soon need this environment. "
+                "Choose the resource tier based on workload intensity: "
+                "light for simple scripts/API calls, medium for general data work, "
+                "heavy for ML training, large dataset processing, or compute-intensive tasks."
             ),
             "parameters": {
                 "type": "object",
@@ -21,10 +25,19 @@ TOOLS = [
                         "type": "string",
                         "enum": [p.name for p in CATALOG],
                     },
+                    "resource_tier": {
+                        "type": "string",
+                        "enum": ["light", "medium", "heavy"],
+                        "description": (
+                            "light: 0.5 CPU / 256MB — simple scripts, string ops, small API calls. "
+                            "medium: 1 CPU / 512MB — pandas on moderate datasets, general data work. "
+                            "heavy: 2 CPU / 2GB — scikit-learn training, large CSVs, numerical simulations."
+                        ),
+                    },
                     "count": {"type": "integer", "minimum": 1, "maximum": 5, "default": 1},
                     "reasoning": {"type": "string"},
                 },
-                "required": ["profile_name", "reasoning"],
+                "required": ["profile_name", "resource_tier", "reasoning"],
             },
         },
     },
@@ -53,13 +66,21 @@ async def dispatch_tool_call(
 ) -> dict:
     if tool_name == "warm_containers":
         profile_name = tool_args["profile_name"]
+        tier = tool_args.get("resource_tier", "medium")
         count = int(tool_args.get("count", 1))
         reasoning = tool_args.get("reasoning", "")
-        _log.info("Warming %d x %s — %s", count, profile_name, reasoning)
-        containers = await container_service.warm(profile_name, count=count)
+
+        resource_tier = ResourceTier(tier) if tier in ResourceTier._value2member_map_ else ResourceTier.medium
+        spec = ContainerSpec(profile_name=profile_name, resource_tier=resource_tier)
+
+        _log.info("Warming %d x %s [%s] — %s", count, profile_name, tier, reasoning)
+        containers = await container_service.warm(profile_name, count=count, spec=spec)
         return {
             "action": "warmed",
             "profile": profile_name,
+            "resource_tier": resource_tier.value,
+            "memory_mb": spec.memory_mb,
+            "cpu_quota": spec.cpu_quota,
             "count": len(containers),
             "container_ids": [c.id for c in containers],
             "reasoning": reasoning,

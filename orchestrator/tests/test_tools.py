@@ -32,10 +32,15 @@ async def test_dispatch_warm_containers():
         {"profile_name": "python-data", "count": 1, "reasoning": "test"},
         svc,
     )
-    svc.warm.assert_awaited_once_with("python-data", count=1)
+    svc.warm.assert_awaited_once()
+    call_kwargs = svc.warm.call_args
+    assert call_kwargs[0][0] == "python-data"
+    assert call_kwargs[1]["count"] == 1
+    assert call_kwargs[1]["spec"].resource_tier.value == "medium"
     assert result["action"] == "warmed"
     assert result["profile"] == "python-data"
     assert result["count"] == 1
+    assert result["resource_tier"] == "medium"
 
 
 @pytest.mark.asyncio
