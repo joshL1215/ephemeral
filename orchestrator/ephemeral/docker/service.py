@@ -233,6 +233,21 @@ class ContainerService:
         cmd_str = "pip install " + " ".join(packages)
         return await self.exec(container_id, cmd_str, language="sh")
 
+    async def release(self, container_id: str) -> None:
+        """Return an assigned container back to the ready pool."""
+        async with self._lock:
+            container = self._containers.get(container_id)
+            if container is None or container.state != ContainerState.assigned:
+                return
+            container.state = ContainerState.ready
+            container.assigned_to = None
+            sig = container.spec.signature()
+            queue = self._ready_by_signature.setdefault(sig, [])
+            if container_id not in queue:
+                queue.append(container_id)
+        await publish("container.released", {"id": container_id, "profile": container.profile_name})
+        _log.info("Released container %s back to ready", container_id)
+
     async def kill(self, container_id: str, reason: str = "") -> None:
         if container_id not in self._containers:
             return

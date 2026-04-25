@@ -153,6 +153,8 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
         from ephemeral.mcp.router import route
         from ephemeral.mcp.executor import execute
 
+        t_start = time.time()
+
         try:
             routing = await route(
                 code=body.code,
@@ -170,6 +172,28 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Execution failed: {e}")
 
+        total_ms = int((time.time() - t_start) * 1000)
+
+        if body.session_id:
+            pkgs = f", installed: {result.installed_packages}" if result.installed_packages else ""
+            msg = (
+                f"Executed on {result.profile} [{result.resource_tier}] "
+                f"container {result.container_id} via {result.matched} — "
+                f"exit {result.exit_code}, {result.duration_ms}ms exec / {total_ms}ms total{pkgs}"
+            )
+            await session_store.append_log(body.session_id, msg)
+            await session_store.append_tool_call(
+                body.session_id,
+                "execute_code",
+                {
+                    "profile": result.profile,
+                    "tier": result.resource_tier,
+                    "container_id": result.container_id,
+                    "matched": result.matched,
+                },
+                f"exit={result.exit_code}, {total_ms}ms",
+            )
+
         return {
             "stdout": result.stdout,
             "stderr": result.stderr,
@@ -179,6 +203,8 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
             "resource_tier": result.resource_tier,
             "matched": result.matched,
             "installed_packages": result.installed_packages,
+            "duration_ms": result.duration_ms,
+            "total_ms": total_ms,
         }
 
     @app.get("/api/sessions")

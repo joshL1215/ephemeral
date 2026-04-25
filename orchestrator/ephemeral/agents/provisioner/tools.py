@@ -56,6 +56,29 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_containers",
+            "description": (
+                "Kill one or more idle containers to free server resources. "
+                "Only kill containers in 'ready' state. Never kill 'assigned' containers. "
+                "Prefer killing older containers and containers not predicted for an active session."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "container_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of container IDs to kill.",
+                    },
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["container_ids", "reasoning"],
+            },
+        },
+    },
 ]
 
 
@@ -94,6 +117,16 @@ async def dispatch_tool_call(
         reasoning = tool_args.get("reasoning", "")
         _log.info("No action — %s", reasoning)
         return {"action": "no_action", "reasoning": reasoning}
+
+    if tool_name == "kill_containers":
+        container_ids = tool_args.get("container_ids", [])
+        reasoning = tool_args.get("reasoning", "")
+        killed = []
+        for cid in container_ids:
+            await container_service.kill(cid, reason=f"pruning: {reasoning}")
+            killed.append(cid)
+        _log.info("Pruned %d containers — %s", len(killed), reasoning)
+        return {"action": "killed", "container_ids": killed, "reasoning": reasoning}
 
     _log.warning("Unknown tool call: %s", tool_name)
     return {"action": "unknown", "tool": tool_name}

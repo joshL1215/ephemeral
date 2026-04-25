@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 
 from ephemeral.docker.service import ContainerService
@@ -17,6 +18,7 @@ class ExecutionResult:
     resource_tier: str
     matched: str
     installed_packages: list[str]
+    duration_ms: int
 
 
 async def execute(
@@ -25,10 +27,17 @@ async def execute(
     routing: RoutingResult,
     container_service: ContainerService,
 ) -> ExecutionResult:
-    result = await container_service.exec(routing.container_id, code, language=language)
+    t0 = time.monotonic()
+    try:
+        result = await container_service.exec(routing.container_id, code, language=language)
+    finally:
+        # Always release back to pool — even on error the container may still be usable
+        await container_service.release(routing.container_id)
+
+    duration_ms = int((time.monotonic() - t0) * 1000)
     _log.info(
-        "Executed on %s (exit=%d, matched=%s)",
-        routing.container_id, result.exit_code, routing.matched,
+        "Executed on %s (exit=%d, matched=%s, %dms)",
+        routing.container_id, result.exit_code, routing.matched, duration_ms,
     )
     return ExecutionResult(
         stdout=result.stdout,
@@ -39,4 +48,5 @@ async def execute(
         resource_tier=routing.resource_tier,
         matched=routing.matched,
         installed_packages=routing.installed_packages,
+        duration_ms=duration_ms,
     )
