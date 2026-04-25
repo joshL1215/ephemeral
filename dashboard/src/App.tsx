@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { getSessionSource } from "./data/sessionSource";
 import type {
+  AgentLogEntry,
   AgentSummary,
   SandboxSummary,
   SessionEvent,
@@ -66,7 +67,11 @@ export function App() {
 
           <section className="right-column">
             <Panel title="Agent Observability">
-              {snapshot ? <AgentCard agent={snapshot.orchestratorAgent} /> : <EmptyState />}
+              {snapshot?.orchestratorAgent ? (
+                <AgentCard agent={snapshot.orchestratorAgent} />
+              ) : (
+                <EmptyState />
+              )}
             </Panel>
 
             <Panel title="Sandbox Pool">
@@ -100,8 +105,8 @@ function SandboxRow(props: { sandbox: SandboxSummary }) {
   return (
     <article className="row">
       <div>
-        <div className="primary">{sandbox.name}</div>
-        <div className="secondary">{sandbox.id}</div>
+        <ExpandableText className="primary" text={sandbox.name} />
+        <ExpandableText className="secondary" text={sandbox.id} />
       </div>
       <div className="row-meta">
         <span className={`status status-${sandbox.status}`}>{sandbox.status}</span>
@@ -113,31 +118,115 @@ function SandboxRow(props: { sandbox: SandboxSummary }) {
 
 function AgentCard(props: { agent: AgentSummary }) {
   const { agent } = props;
+  const allLogs = agent.logs;
+  const toolCalls = agent.logs.filter((entry) => entry.kind === "tool_call");
 
   return (
     <article className="agent-card">
       <div className="agent-card-top">
         <div>
-          <div className="primary">{agent.name}</div>
-          <div className="secondary">{agent.model}</div>
+          <ExpandableText className="primary" text={agent.name} />
+          <ExpandableText className="secondary" text={agent.model} />
         </div>
         <span className={`status status-${agent.state}`}>{agent.state}</span>
       </div>
       <div className="agent-detail">
         <span className="secondary">Current task</span>
-        <div className="primary agent-text">{agent.currentTask}</div>
+        <ExpandableText className="primary agent-text" text={agent.currentTask} />
       </div>
       <div className="agent-detail agent-log-block">
-        <span className="secondary">Logs</span>
-        <div className="agent-log-list">
-          {agent.logs.map((entry, index) => (
-            <div className="secondary agent-log-line" key={`${agent.id}-log-${index}`}>
-              {entry}
-            </div>
-          ))}
+        <div className="agent-log-section">
+          <span className="secondary">Logs</span>
+          <AutoScrollingList listKey={`${agent.id}-logs`} className="agent-log-list">
+            {allLogs.length > 0 ? (
+              allLogs.map((entry, index) => (
+                <LogLine entry={entry} key={`${agent.id}-log-${index}`} />
+              ))
+            ) : (
+              <div className="secondary agent-log-line">No logs yet</div>
+            )}
+          </AutoScrollingList>
+        </div>
+        <div className="agent-log-section">
+          <span className="secondary">Tool Calls</span>
+          <AutoScrollingList listKey={`${agent.id}-tools`} className="agent-log-list">
+            {toolCalls.length > 0 ? (
+              toolCalls.map((entry, index) => (
+                <LogLine entry={entry} key={`${agent.id}-tool-${index}`} />
+              ))
+            ) : (
+              <div className="secondary agent-log-line">No tool calls yet</div>
+            )}
+          </AutoScrollingList>
         </div>
       </div>
     </article>
+  );
+}
+
+function AutoScrollingList(props: {
+  listKey: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { listKey, className, children } = props;
+  const ref = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || !stickToBottomRef.current) {
+      return;
+    }
+
+    element.scrollTop = element.scrollHeight;
+  }, [listKey, children]);
+
+  return (
+    <div
+      className={className}
+      ref={ref}
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+        stickToBottomRef.current = distanceFromBottom < 24;
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LogLine(props: { entry: AgentLogEntry }) {
+  const { entry } = props;
+  const text = entry.kind === "tool_call" ? `Agent called function: ${entry.text}` : entry.text;
+
+  return (
+    <div className={`secondary agent-log-line agent-log-line-${entry.kind}`}>
+      <span className="agent-log-time">{formatLogTime(entry.ts)}</span>
+      <ExpandableText className="agent-log-copy" text={text} />
+    </div>
+  );
+}
+
+function ExpandableText(props: { text: string; className?: string }) {
+  const { text, className } = props;
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 80;
+
+  if (!isLong) {
+    return <span className={className}>{text}</span>;
+  }
+
+  return (
+    <button
+      className={`expandable-text${expanded ? " expanded" : ""}${className ? ` ${className}` : ""}`}
+      onClick={() => setExpanded((value) => !value)}
+      title={expanded ? "Collapse" : "Click to expand"}
+      type="button"
+    >
+      {text}
+    </button>
   );
 }
 
@@ -149,7 +238,7 @@ function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent
   switch (event.type) {
     case "snapshot":
       return event.snapshot;
-    case "deployed_containers":
+    case "deployed_sandboxes":
       return {
         ...currentSnapshot,
         deployedSandboxes: event.deployedSandboxes,
@@ -164,7 +253,62 @@ function applySessionEvent(currentSnapshot: SessionSnapshot, event: SessionEvent
         ...currentSnapshot,
         orchestratorAgent: event.orchestratorAgent,
       };
+    case "agent_log":
+      return {
+        ...currentSnapshot,
+        orchestratorAgent: {
+          ...currentSnapshot.orchestratorAgent,
+          state: event.state ?? currentSnapshot.orchestratorAgent.state,
+          currentTask: event.currentTask ?? currentSnapshot.orchestratorAgent.currentTask,
+          logs: [...currentSnapshot.orchestratorAgent.logs, event.entry].slice(-64),
+        },
+      };
+    case "upsert_sandbox":
+      return applySandboxUpsert(currentSnapshot, event.sandbox, event.location);
+    case "remove_sandbox":
+      return {
+        ...currentSnapshot,
+        deployedSandboxes: currentSnapshot.deployedSandboxes.filter(
+          (sandbox) => sandbox.id !== event.sandboxId,
+        ),
+        sandboxPool: currentSnapshot.sandboxPool.filter((sandbox) => sandbox.id !== event.sandboxId),
+      };
     default:
       return currentSnapshot;
   }
+}
+
+function applySandboxUpsert(
+  currentSnapshot: SessionSnapshot,
+  sandbox: SandboxSummary,
+  location: "deployed" | "pool",
+): SessionSnapshot {
+  const targetKey = location === "deployed" ? "deployedSandboxes" : "sandboxPool";
+  const otherKey = location === "deployed" ? "sandboxPool" : "deployedSandboxes";
+  const nextTarget = upsertSandbox(currentSnapshot[targetKey], sandbox);
+
+  return {
+    ...currentSnapshot,
+    [targetKey]: nextTarget,
+    [otherKey]: currentSnapshot[otherKey].filter((entry) => entry.id !== sandbox.id),
+  };
+}
+
+function upsertSandbox(sandboxes: SandboxSummary[], sandbox: SandboxSummary) {
+  const existingIndex = sandboxes.findIndex((entry) => entry.id === sandbox.id);
+
+  if (existingIndex === -1) {
+    return [sandbox, ...sandboxes];
+  }
+
+  return sandboxes.map((entry) => (entry.id === sandbox.id ? sandbox : entry));
+}
+
+function formatLogTime(ts: number) {
+  return new Date(ts * 1000).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }

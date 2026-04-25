@@ -1,5 +1,7 @@
 import type { SessionSnapshot } from "../types";
 
+const now = Date.now() / 1000;
+
 export const mockSessionSnapshot: SessionSnapshot = {
   sessionId: "sess-demo-2048",
   deployedSandboxes: [
@@ -55,11 +57,31 @@ export const mockSessionSnapshot: SessionSnapshot = {
     state: "running",
     currentTask: "Allocating warm sandboxes to the active session",
     logs: [
-      "pool scan: 4 standby sandboxes available",
-      "selected sandbox-node-a for reservation",
-      "deployment handoff initiated for ctr-api-7f3a",
-      "waiting for runtime confirmation from backend",
-      "health probe stream attached to active session",
+      {
+        kind: "reasoning",
+        text: "Pool scan suggests enough warm capacity for the active session.",
+        ts: now - 18,
+      },
+      {
+        kind: "reasoning",
+        text: "The incoming context implies a lightweight Python runtime is sufficient.",
+        ts: now - 12,
+      },
+      {
+        kind: "tool_call",
+        text: "warm_sandboxes(profile=python-base, count=1)",
+        ts: now - 9,
+      },
+      {
+        kind: "outcome",
+        text: "sandbox-node-a reserved and attached to deployment flow",
+        ts: now - 5,
+      },
+      {
+        kind: "outcome",
+        text: "health probe stream attached to active session",
+        ts: now - 2,
+      },
     ],
   },
 };

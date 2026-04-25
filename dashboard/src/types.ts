@@ -9,13 +9,21 @@ export type SandboxSummary = {
 
 export type AgentState = "running" | "waiting" | "blocked";
 
+export type AgentLogKind = "reasoning" | "tool_call" | "outcome";
+
+export type AgentLogEntry = {
+  kind: AgentLogKind;
+  text: string;
+  ts: number;
+};
+
 export type AgentSummary = {
   id: string;
   name: string;
   model: string;
   state: AgentState;
   currentTask: string;
-  logs: string[];
+  logs: AgentLogEntry[];
 };
 
 export type SessionSnapshot = {
@@ -31,7 +39,7 @@ export type SessionEvent =
       snapshot: SessionSnapshot;
     }
   | {
-      type: "deployed_containers";
+      type: "deployed_sandboxes";
       deployedSandboxes: SandboxSummary[];
     }
   | {
@@ -41,4 +49,19 @@ export type SessionEvent =
   | {
       type: "agent";
       orchestratorAgent: AgentSummary;
+    }
+  | {
+      type: "agent_log";
+      entry: AgentLogEntry;
+      currentTask?: string;
+      state?: AgentState;
+    }
+  | {
+      type: "upsert_sandbox";
+      sandbox: SandboxSummary;
+      location: "deployed" | "pool";
+    }
+  | {
+      type: "remove_sandbox";
+      sandboxId: string;
     };
