@@ -13,7 +13,7 @@ from .errors import (
     ExecutionTimeoutError,
 )
 from .events import publish
-from .models import Container, ContainerSpec, ContainerState, ExecResult
+from .models import Container, ContainerSpec, ContainerState, ExecResult, ResourceTier
 
 _log = logging.getLogger("ephemeral.docker")
 
@@ -45,7 +45,11 @@ class ContainerService:
                 detach=True,
                 mem_limit=f"{spec.memory_mb}m",
                 nano_cpus=int(spec.cpu_quota * 1e9),
-                labels={"ephemeral.id": cid, "ephemeral.profile": spec.profile_name},
+                labels={
+                    "ephemeral.id": cid,
+                    "ephemeral.profile": spec.profile_name,
+                    "ephemeral.tier": spec.resource_tier.value,
+                },
             )
 
         try:
@@ -243,6 +247,7 @@ class ContainerService:
         _log.info("Killed container %s (reason=%s)", container_id, reason)
 
     async def list_containers(self, state_filter: ContainerState | None = None) -> list[Container]:
+        await self._sync_from_docker()
         async with self._lock:
             containers = list(self._containers.values())
         if state_filter is not None:
@@ -250,6 +255,7 @@ class ContainerService:
         return containers
 
     async def pool_stats(self) -> dict[str, int]:
+        await self._sync_from_docker()
         async with self._lock:
             containers = list(self._containers.values())
         stats: dict[str, int] = {}
@@ -257,6 +263,77 @@ class ContainerService:
             key = f"{c.profile_name}:{c.spec.resource_tier.value}:{c.state.value}"
             stats[key] = stats.get(key, 0) + 1
         return stats
+
+    async def reconcile(self) -> int:
+        """Scan Docker for containers with our labels and rebuild in-memory state.
+        Called once at startup. Returns the number of containers recovered."""
+
+        def _list():
+            return self._client.containers.list(
+                all=True,
+                filters={"label": "ephemeral.id"},
+            )
+
+        try:
+            docker_containers = await asyncio.to_thread(_list)
+        except Exception as exc:
+            _log.warning("Reconcile failed to list Docker containers: %s", exc)
+            return 0
+
+        recovered = 0
+        for dc in docker_containers:
+            cid = dc.labels.get("ephemeral.id")
+            profile_name = dc.labels.get("ephemeral.profile")
+            if not cid or not profile_name:
+                continue
+
+            # Skip states we can't recover meaningfully
+            if dc.status in ("removing", "dead"):
+                continue
+
+            # Map Docker status → ContainerState
+            if dc.status == "running":
+                state = ContainerState.ready
+            elif dc.status in ("created", "paused", "restarting"):
+                state = ContainerState.warming
+            elif dc.status == "exited":
+                state = ContainerState.terminated
+            else:
+                state = ContainerState.terminated
+
+            if state == ContainerState.terminated:
+                continue
+
+            try:
+                tier_label = dc.labels.get("ephemeral.tier", "medium")
+                spec = ContainerSpec(
+                    profile_name=profile_name,
+                    resource_tier=ResourceTier(tier_label),
+                )
+            except Exception:
+                spec = ContainerSpec(profile_name=profile_name)
+
+            container = Container(
+                id=cid,
+                docker_id=dc.id,
+                spec=spec,
+                state=state,
+                profile_name=profile_name,
+                created_at=time.time(),
+                ready_at=time.time() if state == ContainerState.ready else None,
+            )
+
+            async with self._lock:
+                self._containers[cid] = container
+                if state == ContainerState.ready:
+                    sig = spec.signature()
+                    self._ready_by_signature.setdefault(sig, []).append(cid)
+
+            recovered += 1
+            _log.info("Reconciled container %s (profile=%s state=%s)", cid, profile_name, state.value)
+
+        _log.info("Reconcile complete: recovered %d containers", recovered)
+        return recovered
 
     # ------------------------------------------------------------------
     # Internal helpers

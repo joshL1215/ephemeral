@@ -16,6 +16,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
+async def _startup(app, container_service):
+    recovered = await container_service.reconcile()
+    logging.getLogger("ephemeral").info("Startup reconcile: %d containers recovered", recovered)
+
+
 def main():
     docker_client = docker.from_env()
     container_service = ContainerService(docker_client)
@@ -28,10 +33,12 @@ def main():
     )
 
     app = create_app(container_service, session_store)
-
-    # Expose provisioner on app state so routes or other modules can access it
     app.state.provisioner = provisioner
     app.state.container_service = container_service
+
+    @app.on_event("startup")
+    async def on_startup():
+        await _startup(app, container_service)
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
