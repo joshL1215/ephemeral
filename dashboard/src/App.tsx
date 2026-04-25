@@ -130,10 +130,6 @@ function AgentCard(props: { agent: AgentSummary }) {
         </div>
         <span className={`status status-${agent.state}`}>{agent.state}</span>
       </div>
-      <div className="agent-detail">
-        <span className="secondary">Current task</span>
-        <ExpandableText className="primary agent-text" text={getCurrentTaskLabel(agent)} />
-      </div>
       <div className="agent-detail agent-log-block">
         <div className="agent-log-section">
           <span className="secondary">Logs</span>
@@ -319,26 +315,3 @@ function formatLogTime(ts: number) {
   });
 }
 
-function getCurrentTaskLabel(agent: AgentSummary) {
-  const task = agent.currentTask.trim();
-
-  if (!task) {
-    return "Idle";
-  }
-
-  const idleLike = [
-    "idle",
-    "monitoring",
-    "waiting",
-    "standing by",
-    "ready",
-    "completed",
-    "done",
-  ];
-
-  if (idleLike.some((token) => task.toLowerCase().startsWith(token))) {
-    return "Idle";
-  }
-
-  return task;
-}

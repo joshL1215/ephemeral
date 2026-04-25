@@ -117,6 +117,7 @@ class ProvisionerAgent:
                 "warm_containers",
                 {"profile_name": profile_name, "resource_tier": tier, "count": count, "reasoning": reasoning},
                 self._svc,
+                session_id=session_id,
             )
             self._session_warm_counts[session_id] = warmed_so_far + count
             await store.append_log(

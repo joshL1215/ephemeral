@@ -8,8 +8,8 @@ from typing import Any
 import requests
 from mcp.server.fastmcp import FastMCP
 
-# Fixed execution endpoint — not user-configurable.
-_EXECUTE_URL = "https://api.ephemeral-ai.com/v1/execute"
+_BASE_URL = os.environ.get("EPHEMERAL_API_BASE_URL", "https://api.ephemeral-ai.com")
+_EXECUTE_URL = f"{_BASE_URL.rstrip('/')}/api/execute"
 _TIMEOUT_S = 60
 
 mcp = FastMCP("ephemeral")

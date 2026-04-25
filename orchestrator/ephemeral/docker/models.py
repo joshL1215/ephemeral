@@ -35,6 +35,7 @@ class ContainerSpec(BaseModel):
     timeout_s: int = 30
     memory_mb: int = 512
     cpu_quota: float = 1.0
+    predicted_for: str | None = None
 
     @model_validator(mode="after")
     def apply_tier_defaults(self) -> "ContainerSpec":
@@ -59,6 +60,7 @@ class Container(BaseModel):
     created_at: float
     ready_at: float | None = None
     assigned_to: str | None = None
+    predicted_for: str | None = None
 
 
 class ExecResult(BaseModel):

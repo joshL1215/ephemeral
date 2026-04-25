@@ -49,6 +49,7 @@ class ContainerService:
                     "ephemeral.id": cid,
                     "ephemeral.profile": spec.profile_name,
                     "ephemeral.tier": spec.resource_tier.value,
+                    "ephemeral.predicted_for": spec.predicted_for or "",
                 },
             )
 
@@ -65,6 +66,7 @@ class ContainerService:
             state=ContainerState.creating,
             profile_name=spec.profile_name,
             created_at=time.time(),
+            predicted_for=spec.predicted_for,
         )
 
         async with self._lock:
@@ -167,15 +169,27 @@ class ContainerService:
         results = await asyncio.gather(*[_one() for _ in range(count)])
         return list(results)
 
-    async def find_match(self, spec: ContainerSpec) -> Container | None:
+    async def find_match(self, spec: ContainerSpec, session_id: str | None = None) -> Container | None:
         sig = spec.signature()
         async with self._lock:
             queue = self._ready_by_signature.get(sig, [])
+            # Prefer containers predicted for this session
+            if session_id:
+                for cid in list(queue):
+                    c = self._containers.get(cid)
+                    if c and c.state == ContainerState.ready and c.predicted_for == session_id:
+                        queue.remove(cid)
+                        c.state = ContainerState.assigned
+                        c.assigned_to = session_id
+                        return c
+            # Fall back to any ready container
             while queue:
                 cid = queue.pop(0)
-                if cid in self._containers and self._containers[cid].state == ContainerState.ready:
-                    self._containers[cid].state = ContainerState.assigned
-                    return self._containers[cid]
+                c = self._containers.get(cid)
+                if c and c.state == ContainerState.ready:
+                    c.state = ContainerState.assigned
+                    c.assigned_to = session_id
+                    return c
         return None
 
     async def exec(self, container_id: str, code: str, language: str = "python") -> ExecResult:
@@ -384,14 +398,16 @@ class ContainerService:
                 continue
             # stopped containers are kept so the agent can prune them
 
+            predicted_for = dc.labels.get("ephemeral.predicted_for") or None
             try:
                 tier_label = dc.labels.get("ephemeral.tier", "medium")
                 spec = ContainerSpec(
                     profile_name=profile_name,
                     resource_tier=ResourceTier(tier_label),
+                    predicted_for=predicted_for,
                 )
             except Exception:
-                spec = ContainerSpec(profile_name=profile_name)
+                spec = ContainerSpec(profile_name=profile_name, predicted_for=predicted_for)
 
             container = Container(
                 id=cid,
@@ -401,6 +417,7 @@ class ContainerService:
                 profile_name=profile_name,
                 created_at=time.time(),
                 ready_at=time.time() if state == ContainerState.ready else None,
+                predicted_for=predicted_for,
             )
 
             async with self._lock:

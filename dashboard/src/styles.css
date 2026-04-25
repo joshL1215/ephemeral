@@ -131,7 +131,7 @@ body {
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);

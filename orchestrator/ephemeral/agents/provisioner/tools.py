@@ -63,6 +63,7 @@ async def dispatch_tool_call(
     tool_name: str,
     tool_args: dict,
     container_service: ContainerService,
+    session_id: str | None = None,
 ) -> dict:
     if tool_name == "warm_containers":
         profile_name = tool_args["profile_name"]
@@ -70,8 +71,11 @@ async def dispatch_tool_call(
         count = int(tool_args.get("count", 1))
         reasoning = tool_args.get("reasoning", "")
 
-        resource_tier = ResourceTier(tier) if tier in ResourceTier._value2member_map_ else ResourceTier.medium
-        spec = ContainerSpec(profile_name=profile_name, resource_tier=resource_tier)
+        try:
+            resource_tier = ResourceTier(tier)
+        except ValueError:
+            resource_tier = ResourceTier.medium
+        spec = ContainerSpec(profile_name=profile_name, resource_tier=resource_tier, predicted_for=session_id)
 
         _log.info("Warming %d x %s [%s] — %s", count, profile_name, tier, reasoning)
         containers = await container_service.warm(profile_name, count=count, spec=spec)

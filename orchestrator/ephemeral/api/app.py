@@ -4,7 +4,7 @@ import logging
 import time
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -19,6 +19,13 @@ _log = logging.getLogger("ephemeral.api")
 class ContextEventRequest(BaseModel):
     content: str | dict
     source: str = "agent"
+
+
+class ExecuteRequest(BaseModel):
+    code: str
+    language: str = "python"
+    session_id: str | None = None
+    resource_tier: str | None = None
 
 
 def create_app(container_service: ContainerService, session_store: SessionStore) -> FastAPI:
@@ -140,6 +147,39 @@ def create_app(container_service: ContainerService, session_store: SessionStore)
     # ------------------------------------------------------------------
     # GET /api/sessions — list active sessions
     # ------------------------------------------------------------------
+
+    @app.post("/api/execute")
+    async def execute_code(body: ExecuteRequest):
+        from ephemeral.mcp.router import route
+        from ephemeral.mcp.executor import execute
+
+        try:
+            routing = await route(
+                code=body.code,
+                session_id=body.session_id,
+                hint_tier=body.resource_tier,
+                container_service=container_service,
+            )
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Routing failed: {e}")
+
+        try:
+            result = await execute(body.code, body.language, routing, container_service)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Execution failed: {e}")
+
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "container_id": result.container_id,
+            "profile": result.profile,
+            "resource_tier": result.resource_tier,
+            "matched": result.matched,
+            "installed_packages": result.installed_packages,
+        }
 
     @app.get("/api/sessions")
     async def list_sessions():
