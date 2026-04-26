@@ -87,6 +87,9 @@ class ProvisionerAgent:
             _log.error("[%s] K2 call failed: %s", session_id, exc)
             return []
 
+        if response.reasoning_content:
+            await store.append_log(session_id, f"K2 reasoning: {response.reasoning_content}")
+
         for tc in response.tool_calls:
             if tc.name == "warm_containers":
                 profile = tc.arguments.get("profile_name", "")
@@ -214,6 +217,9 @@ class ProvisionerAgent:
             await store.append_log(session_id, f"Pruning K2 call failed: {exc}")
             _log.error("[%s] Pruning K2 call failed: %s", session_id, exc)
             return
+
+        if response.reasoning_content:
+            await store.append_log(session_id, f"Pruning reasoning: {response.reasoning_content[:300]}")
 
         for tc in response.tool_calls:
             if tc.name == "kill_containers":
