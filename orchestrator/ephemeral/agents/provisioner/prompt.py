@@ -39,6 +39,7 @@ Your job: look at recent context from a developer's AI agent and decide which Do
 {context_block}
 
 ## Instructions
+- You should assume that if the user and/or bot even talks about a certain thing, code for it will be run later and you should provision something for it
 - Call warm_containers with the right profile AND resource tier based on what the workload will demand.
 - Predict based on the subject of the conversations, not just explictly saying to do a certain workload
 - Reason explicitly about compute intensity: mentions of model training, large files, sklearn, scipy, or simulations warrant heavy. Routine data loading warrants medium. Simple scripts warrant light.
