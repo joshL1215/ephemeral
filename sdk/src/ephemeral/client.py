@@ -12,8 +12,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-# Fixed ingest endpoint — controlled by Ephemeral, not the user.
-_INGEST_URL = "https://ingest.ephemeral-ai.com/v1/events"
+_INGEST_URL = os.environ.get("EPHEMERAL_INGEST_URL")
 
 _BATCH_SIZE = 50
 _FLUSH_INTERVAL_S = 2.0
@@ -94,6 +93,8 @@ class _Client:
                 last_flush = time.time()
 
     def _send(self, batch: list) -> None:
+        if not _INGEST_URL:
+            return
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
