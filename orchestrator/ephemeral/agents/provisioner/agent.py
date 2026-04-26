@@ -40,9 +40,6 @@ class ProvisionerAgent:
         window = self._windows.setdefault(session_id, ContextWindow())
         window.add(event)
 
-        content = event.content if isinstance(event.content, str) else str(event.content)
-        await store.append_log(session_id, f"Context received: {content}")
-
         # Rate-limit K2 calls — don't reason on every single event
         now = time.time()
         last = self._last_llm_call.get(session_id, 0.0)
@@ -71,9 +68,7 @@ class ProvisionerAgent:
                 reasoning = tc.arguments.get("reasoning", "")
                 await self._act(session_id, profile, tier, count, reasoning)
             elif tc.name == "no_action":
-                reasoning = tc.arguments.get("reasoning", "")
-                await store.append_log(session_id, f"No action needed: {reasoning}")
-                await store.append_tool_call(session_id, "no_action", tc.arguments, "skipped")
+                pass
 
     async def _llm_predict(self, session_id: str, window: ContextWindow) -> list[ToolCall]:
         store = get_store()
@@ -85,17 +80,12 @@ class ProvisionerAgent:
             {"role": "user", "content": "Based on the context above, decide what to provision."},
         ]
 
-        await store.append_log(session_id, "Calling K2 Think to reason about provisioning...")
-
         try:
             response = await self._k2.complete(messages, tools=TOOLS)
         except Exception as exc:
             await store.append_log(session_id, f"K2 call failed: {exc}")
             _log.error("[%s] K2 call failed: %s", session_id, exc)
             return []
-
-        if response.reasoning_content:
-            await store.append_log(session_id, f"K2 reasoning: {response.reasoning_content}")
 
         for tc in response.tool_calls:
             if tc.name == "warm_containers":
@@ -104,10 +94,8 @@ class ProvisionerAgent:
                 count = tc.arguments.get("count", 1)
                 await store.append_log(
                     session_id,
-                    f"K2 decided: call warm_containers(profile={profile}, tier={tier}, count={count})"
+                    f"K2 decided: warm_containers(profile={profile}, tier={tier}, count={count})"
                 )
-            elif tc.name == "no_action":
-                await store.append_log(session_id, "K2 decided: no_action")
 
         return response.tool_calls
 
@@ -227,9 +215,6 @@ class ProvisionerAgent:
             _log.error("[%s] Pruning K2 call failed: %s", session_id, exc)
             return
 
-        if response.reasoning_content:
-            await store.append_log(session_id, f"Pruning reasoning: {response.reasoning_content[:300]}")
-
         for tc in response.tool_calls:
             if tc.name == "kill_containers":
                 ids = tc.arguments.get("container_ids", [])
@@ -241,5 +226,3 @@ class ProvisionerAgent:
                     {"container_ids": ids},
                     f"killed {len(result['container_ids'])} containers",
                 )
-            elif tc.name == "no_action":
-                await store.append_log(session_id, f"Pruning: no_action — {tc.arguments.get('reasoning', '')}")
