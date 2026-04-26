@@ -306,6 +306,8 @@ class ContainerService:
             containers = list(self._containers.values())
         stats: dict[str, int] = {}
         for c in containers:
+            if c.state == ContainerState.terminated:
+                continue
             key = f"{c.profile_name}:{c.spec.resource_tier.value}:{c.state.value}"
             stats[key] = stats.get(key, 0) + 1
         return stats
