@@ -14,6 +14,10 @@ import requests
 
 _INGEST_URL = os.environ.get("EPHEMERAL_INGEST_URL")
 
+# Static context endpoint base. Not user-configurable in production; an env
+# override is allowed only for local development against a non-default host.
+_CONTEXT_BASE_URL = os.environ.get("EPHEMERAL_API_BASE_URL", "http://localhost:8001").rstrip("/")
+
 _BATCH_SIZE = 50
 _FLUSH_INTERVAL_S = 2.0
 _QUEUE_MAX = 10_000
@@ -145,6 +149,26 @@ class Session:
 
 
 _client = _Client()
+
+
+_context_session = requests.Session()
+
+
+def _send_context(content: str, session_id: Optional[str] = None) -> None:
+    """Fire-and-forget POST of a context event to the static provisioner endpoint."""
+    if not content:
+        return
+    sid = session_id or _client._session_id
+    url = f"{_CONTEXT_BASE_URL}/api/sessions/{sid}/context"
+    payload = {"content": content, "source": "agent"}
+
+    def _do_post() -> None:
+        try:
+            _context_session.post(url, json=payload, timeout=5)
+        except requests.RequestException:
+            pass
+
+    threading.Thread(target=_do_post, name="ephemeral-context", daemon=True).start()
 
 
 def init(api_key: Optional[str] = None, project: Optional[str] = None) -> None:

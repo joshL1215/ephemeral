@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 
-from .client import _enqueue, Session
+from .client import _enqueue, _send_context, Session
 
 
 def _normalize(value: Any) -> Any:
@@ -29,20 +29,165 @@ def _normalize(value: Any) -> Any:
 
 
 def log(
-    messages: Optional[Iterable[Dict[str, Any]]] = None,
+    _arg: Any = None,
     *,
     name: Optional[str] = None,
     model: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
-) -> None:
-    """Manually log a conversation snapshot."""
+    session: Optional[Session] = None,
+) -> Any:
+    """Log a conversation snapshot, OR wrap a function to auto-stream
+    (user_input, ai_output) pairs to the static context endpoint.
+
+    Three forms:
+        # 1. Manual snapshot
+        ephemeral.log(messages, name="...", model="...")
+
+        # 2. Bare decorator
+        @ephemeral.log
+        def call_llm(messages): ...
+
+        # 3. Decorator with options
+        @ephemeral.log(name="agent")
+        def run_agent(task): ...
+
+    When used as a decorator, every call extracts the latest user-role message
+    from the inputs and the assistant text from the return value. If both are
+    present, a single combined event is POSTed to the provisioner so it can
+    pre-warm the right container before the next turn.
+    """
+    if callable(_arg):
+        return _wrap_for_pair_streaming(_arg, session=session)
+
+    if _arg is None:
+        def decorator(fn: Callable) -> Callable:
+            return _wrap_for_pair_streaming(fn, session=session)
+        return decorator
+
     _enqueue({
         "type": "conversation",
         "name": name,
         "model": model,
-        "messages": _normalize(list(messages)) if messages is not None else None,
+        "messages": _normalize(list(_arg)),
         "metadata": _normalize(metadata) if metadata else None,
-    })
+    }, session=session)
+    return None
+
+
+def _content_to_text(content: Any) -> str:
+    """Flatten Anthropic-style content (str | list[block]) to plain text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            text = None
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    text = block.get("text")
+                elif block.get("type") == "tool_use":
+                    text = f"[tool_use {block.get('name')}({block.get('input')})]"
+                elif block.get("type") == "tool_result":
+                    inner = block.get("content")
+                    text = inner if isinstance(inner, str) else _content_to_text(inner)
+            else:
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    text = getattr(block, "text", None)
+                elif btype == "tool_use":
+                    text = f"[tool_use {getattr(block, 'name', '?')}({getattr(block, 'input', None)})]"
+                elif btype == "tool_result":
+                    text = _content_to_text(getattr(block, "content", None))
+            if text:
+                parts.append(text)
+        return "\n".join(parts)
+    return str(content)
+
+
+def _find_messages_arg(args: tuple, kwargs: dict) -> Optional[list]:
+    """Find a list-of-message-dicts in the call arguments."""
+    cand = kwargs.get("messages")
+    if isinstance(cand, list):
+        return cand
+    for a in args:
+        if isinstance(a, list) and a and isinstance(a[0], dict) and "role" in a[0]:
+            return a
+    return None
+
+
+def _last_user_text(messages: list) -> Optional[str]:
+    for msg in reversed(messages):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            text = _content_to_text(msg.get("content"))
+            return text or None
+    return None
+
+
+def _assistant_text_from_result(result: Any) -> Optional[str]:
+    """Extract assistant text from an LLM response or messages list."""
+    content = getattr(result, "content", None)
+    if content is not None and not isinstance(result, dict):
+        text = _content_to_text(content)
+        if text:
+            return text
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        for msg in reversed(result):
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                text = _content_to_text(msg.get("content"))
+                if text:
+                    return text
+    if isinstance(result, str):
+        return result or None
+    return None
+
+
+def _wrap_for_pair_streaming(fn: Callable, session: Optional[Session] = None) -> Callable:
+    """Decorator: on each call, extract (user, assistant) pair and stream it."""
+    sid = session.id if session is not None else None
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        user_text = None
+        msgs_in = _find_messages_arg(args, kwargs)
+        if msgs_in is not None:
+            user_text = _last_user_text(msgs_in)
+        else:
+            for a in args:
+                if isinstance(a, str):
+                    user_text = a
+                    break
+
+        result = fn(*args, **kwargs)
+
+        ai_text = _assistant_text_from_result(result)
+
+        if isinstance(result, list) and result and isinstance(result[0], dict) \
+                and "role" in result[0] and msgs_in is None:
+            # The function returned a full conversation — stream every pair.
+            _stream_all_pairs(result, sid)
+        elif user_text and ai_text:
+            _send_context(f"user: {user_text}\nassistant: {ai_text}", session_id=sid)
+
+        return result
+
+    return wrapper
+
+
+def _stream_all_pairs(messages: list, session_id: Optional[str]) -> None:
+    """Walk a messages list and send each user→assistant turn as one context event."""
+    pending_user: Optional[str] = None
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        text = _content_to_text(msg.get("content"))
+        if role == "user" and text:
+            pending_user = text
+        elif role == "assistant" and text and pending_user:
+            _send_context(f"user: {pending_user}\nassistant: {text}", session_id=session_id)
+            pending_user = None
 
 
 def track(
